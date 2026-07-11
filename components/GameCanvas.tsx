@@ -3,9 +3,6 @@
 import { useCallback, useEffect, useRef } from "react";
 import type { Hotspot, SceneData } from "@/lib/universe";
 
-/** Walk mask resolution — must match the vision pass in lib/world-engine.ts. */
-const GRID_W = 24;
-const GRID_H = 14;
 const SPEED_X = 26; // % of width per second
 const SPEED_Y = 20; // % of height per second
 
@@ -35,37 +32,10 @@ export function GameCanvas({
   const nearRef = useRef<Hotspot | null>(null);
   const pausedRef = useRef(paused);
   pausedRef.current = paused;
-  // Escape hatch: frames spent pushing into walls with no progress. Past a
-  // threshold, collision relaxes so the player can never be trapped.
-  const stuckFramesRef = useRef(0);
   const debugRef = useRef(false);
   useEffect(() => {
     debugRef.current = new URLSearchParams(window.location.search).has("debug");
   }, []);
-
-  /** Grid-mask collision: '1' cells are walls (dot = cannot go). Interaction
-   *  zones stay reachable so doors and NPCs are never sealed off. */
-  const isBlocked = useCallback(
-    (px: number, py: number): boolean => {
-      const grid = scene.walkGrid;
-      if (!grid || grid.length === 0) return false;
-      const m = 4;
-      for (const h of scene.hotspots) {
-        if (
-          px >= h.rect.x - m &&
-          px <= h.rect.x + h.rect.w + m &&
-          py >= h.rect.y - m &&
-          py <= h.rect.y + h.rect.h + m
-        ) {
-          return false;
-        }
-      }
-      const col = Math.max(0, Math.min(GRID_W - 1, Math.floor((px / 100) * GRID_W)));
-      const row = Math.max(0, Math.min(GRID_H - 1, Math.floor((py / 100) * GRID_H)));
-      return grid[row]?.[col] === 1;
-    },
-    [scene.walkGrid, scene.hotspots]
-  );
 
   // (Re)load the backdrop when the scene changes; spawn on walkable ground.
   useEffect(() => {
@@ -77,28 +47,9 @@ export function GameCanvas({
 
     const startX = scene.kind === "interior" ? 50 : 14;
     const startY = 72;
-    let x = startX;
-    let y = startY;
-    if (isBlocked(x, y)) {
-      outer: for (let radius = 4; radius <= 90; radius += 4) {
-        for (const [cx, cy] of [
-          [startX + radius, startY],
-          [startX - radius, startY],
-          [startX, startY - radius],
-          [startX, startY + radius],
-          [startX + radius, startY - radius],
-          [startX - radius, startY + radius],
-        ]) {
-          if (cx >= 2 && cx <= 98 && cy >= 2 && cy <= 96 && !isBlocked(cx, cy)) {
-            x = cx;
-            y = cy;
-            break outer;
-          }
-        }
-      }
-    }
+    const x = startX;
+    const y = startY;
     playerRef.current = { x, y, dir: 1, moving: false };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scene.id, scene.image, scene.kind]);
 
   // Keyboard
@@ -170,26 +121,10 @@ export function GameCanvas({
         if (vx !== 0) p.dir = vx > 0 ? 1 : -1;
         p.moving = vx !== 0 || vy !== 0;
 
-        const nx = Math.max(2, Math.min(98, p.x + vx * SPEED_X * dt));
-        const ny = Math.max(4, Math.min(96, p.y + vy * SPEED_Y * dt));
-        const relaxed = stuckFramesRef.current > 30;
-
-        if (relaxed || !isBlocked(nx, ny)) {
-          p.x = nx;
-          p.y = ny;
-          stuckFramesRef.current = 0;
-        } else if (!isBlocked(nx, p.y)) {
-          p.x = nx; // slide horizontally along the wall
-          stuckFramesRef.current = 0;
-        } else if (!isBlocked(p.x, ny)) {
-          p.y = ny; // slide vertically along the wall
-          stuckFramesRef.current = 0;
-        } else if (p.moving) {
-          stuckFramesRef.current++;
-        }
+        p.x = Math.max(2, Math.min(98, p.x + vx * SPEED_X * dt));
+        p.y = Math.max(4, Math.min(96, p.y + vy * SPEED_Y * dt));
       } else {
         p.moving = false;
-        stuckFramesRef.current = 0;
       }
 
       // --- Near hotspot? ---
@@ -231,33 +166,13 @@ export function GameCanvas({
       const X = (pxPct: number) => ox + (pxPct / 100) * dw;
       const Y = (pyPct: number) => oy + (pyPct / 100) * dh;
 
-      // --- Debug overlay (?debug=1): red dots on blocked cells ---
-      if (debugRef.current && scene.walkGrid) {
-        for (let r = 0; r < GRID_H; r++) {
-          for (let c = 0; c < GRID_W; c++) {
-            if (scene.walkGrid[r]?.[c] === 1) {
-              ctx.beginPath();
-              ctx.arc(
-                X(((c + 0.5) / GRID_W) * 100),
-                Y(((r + 0.5) / GRID_H) * 100),
-                4,
-                0,
-                Math.PI * 2
-              );
-              ctx.fillStyle = "rgba(255,0,0,0.55)";
-              ctx.fill();
-            }
-          }
-        }
+      // --- Debug overlay (?debug=1): player state ---
+      if (debugRef.current) {
         ctx.fillStyle = "rgba(0,0,0,0.7)";
-        ctx.fillRect(8, ch - 30, 240, 22);
+        ctx.fillRect(8, ch - 30, 200, 22);
         ctx.fillStyle = "#7CFC9E";
         ctx.font = "12px monospace";
-        ctx.fillText(
-          `x=${p.x.toFixed(1)} y=${p.y.toFixed(1)} stuck=${stuckFramesRef.current}`,
-          14,
-          ch - 14
-        );
+        ctx.fillText(`x=${p.x.toFixed(1)} y=${p.y.toFixed(1)}`, 14, ch - 14);
       }
 
       // --- Hotspot affordances ---
@@ -378,7 +293,7 @@ export function GameCanvas({
       clearInterval(fallback);
       delete (window as unknown as Record<string, unknown>).__kahani;
     };
-  }, [scene, sprite, isBlocked]);
+  }, [scene, sprite]);
 
   return <canvas ref={canvasRef} className="block h-full w-full" />;
 }

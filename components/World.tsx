@@ -241,7 +241,7 @@ export function World() {
         questHook: hook,
       }).then(({ scene: s }) => {
         scenesRef.current.set(s.id, s);
-        addCalls(3); // interior = level-design text + image + walkability vision
+        addCalls(2); // interior = level-design text + image
         setInteriorsReady((r) => r + 1);
         prefetchConversation(thePremise, arc, hook, s);
         return s;
@@ -309,7 +309,7 @@ export function World() {
           scene: SceneData;
           questHook: string;
         }>("/api/scene", { premise: chosen, story: spec.story });
-        addCalls(3); // street = level design + image + walkability vision
+        addCalls(2); // street = level design + image
         setQuestHook(hook || spec.story.goal);
         showScene(street);
         setPhase("playing");

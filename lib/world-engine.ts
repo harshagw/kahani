@@ -111,70 +111,6 @@ export async function expandUniverse(idea: string): Promise<UniverseSpec> {
 }
 
 /* ------------------------------------------------------------------ */
-/* Walkability — a vision pass over the ACTUAL generated frame         */
-/* ------------------------------------------------------------------ */
-
-const GRID_W = 24;
-const GRID_H = 14;
-
-const walkabilitySchema = {
-  type: Type.OBJECT,
-  properties: {
-    walkGrid: {
-      type: Type.ARRAY,
-      items: { type: Type.STRING },
-      description:
-        "Exactly 14 strings, one per grid row top-to-bottom, each EXACTLY 24 characters ('0' or '1'), dividing the image into a 24-wide x 14-tall grid. '1' = the player CANNOT stand there (building, wall, water, tree, fence, rock, furniture, counter). '0' = open walkable ground (path, grass, plaza, floor). Doorways count as '0'. Be precise: align cells with what is actually in the image.",
-    },
-  },
-  required: ["walkGrid"],
-};
-
-async function analyzeWalkability(
-  b64: string,
-  mimeType: string,
-  keepClearNote: string
-): Promise<{ walkGrid: number[][] }> {
-  try {
-    const res = await ai().models.generateContent({
-      model: TEXT_MODEL,
-      contents: [
-        { inlineData: { data: b64, mimeType } },
-        {
-          text: `This is a top-down retro RPG overworld frame from an adventure game. The player character walks on the visible ground plane (paths, tiles, floors). Map its walkability. ${keepClearNote} Return ONLY the structured object.`,
-        },
-      ],
-      config: {
-        responseMimeType: "application/json",
-        responseSchema: walkabilitySchema,
-        temperature: 0.2,
-      },
-    });
-    if (!res.text) throw new Error("empty walkability");
-    const parsed = JSON.parse(res.text) as { walkGrid: string[] };
-    const rows = (parsed.walkGrid ?? []).slice(0, GRID_H);
-    const grid: number[][] = [];
-    for (let r = 0; r < GRID_H; r++) {
-      const src = (rows[r] ?? "").padEnd(GRID_W, "0").slice(0, GRID_W);
-      grid.push([...src].map((c) => (c === "1" ? 1 : 0)));
-    }
-    // Safety: the map must stay mostly open — an over-blocked mask would
-    // freeze the player, so fail open instead.
-    const blockedCells = grid.flat().filter(Boolean).length;
-    if (blockedCells / (GRID_W * GRID_H) > 0.75) {
-      console.warn("[analyzeWalkability] over-blocked mask; failing open");
-      return { walkGrid: grid.map((row) => row.map(() => 0)) };
-    }
-    return { walkGrid: grid };
-  } catch (err) {
-    console.error("[analyzeWalkability] falling back to open ground:", err);
-    return {
-      walkGrid: Array.from({ length: GRID_H }, () => new Array(GRID_W).fill(0)),
-    };
-  }
-}
-
-/* ------------------------------------------------------------------ */
 /* Scene generation                                                    */
 /* ------------------------------------------------------------------ */
 
@@ -385,13 +321,6 @@ export async function generateStreetScene(
     null
   );
 
-  // Ground the collision map in the ACTUAL pixels that came back.
-  const walk = await analyzeWalkability(
-    img.b64,
-    img.mimeType,
-    "Mark water, crowds, vehicles, stalls, trees, and buildings as 1."
-  );
-
   const hotspots: Hotspot[] = spec.buildings.slice(0, 3).map((b, i) => ({
     id: `b${i}`,
     kind: "building" as const,
@@ -430,7 +359,6 @@ export async function generateStreetScene(
     ambient: spec.ambient,
     image: toDataUrl(img.b64, img.mimeType),
     hotspots,
-    walkGrid: walk.walkGrid,
     questHook: spec.questHook,
   };
 }
@@ -497,12 +425,6 @@ export async function generateInteriorScene(
     null
   );
 
-  const walk = await analyzeWalkability(
-    img.b64,
-    img.mimeType,
-    "Do NOT mark the single main character (the shopkeeper/NPC) as blocked — the player must approach them. Mark counters, furniture, walls, water, and fire as 1."
-  );
-
   const hotspots: Hotspot[] = [
     {
       id: `${building.id}-npc`,
@@ -551,7 +473,6 @@ export async function generateInteriorScene(
     hotspots,
     npc: spec.npc,
     parentId: "street",
-    walkGrid: walk.walkGrid,
     clueIndex: building.clueIndex,
   };
 }

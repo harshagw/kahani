@@ -57,12 +57,6 @@ export type SceneData = {
   npc?: NpcDef;
   /** Interior scenes remember the street they came from. */
   parentId?: string;
-  /** Vision-derived: y (%) where walkable ground begins (the horizon). */
-  groundTop?: number;
-  /** Vision-derived no-walk boxes: water, people, stalls, furniture, vehicles. */
-  obstacles?: Rect[];
-  /** Vision-derived walk mask: rows of 0/1 cells (1 = blocked), 24 cols × 14 rows. */
-  walkGrid?: number[][];
   /** For interiors: which story clue this scene's NPC guards. */
   clueIndex?: number;
 };
