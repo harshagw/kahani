@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { expandUniverse } from "@/lib/world-engine";
+import { generateBible } from "@/lib/world-engine";
 
 export const runtime = "nodejs";
-export const maxDuration = 30;
+export const maxDuration = 60;
 
 export async function POST(req: NextRequest) {
   let body: { idea: string };
@@ -16,8 +16,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Describe your scene first." }, { status: 400 });
   }
   try {
-    const spec = await expandUniverse(idea.slice(0, 1200));
-    return NextResponse.json({ spec });
+    const bible = await generateBible(idea.slice(0, 1200));
+    return NextResponse.json({ bible });
   } catch (err) {
     console.error("[/api/universe]", err);
     return NextResponse.json(

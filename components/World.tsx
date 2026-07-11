@@ -2,20 +2,30 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { DoorOpen, Package, Search, Volume2, VolumeX, Zap } from "lucide-react";
+import { DoorOpen, Flame, Package, Search, Volume2, VolumeX, Zap } from "lucide-react";
 import type { Premise } from "@/lib/types";
 import type {
   DialogueResponse,
   DialogueTurn,
+  GameBible,
   Hotspot,
   SceneData,
-  StoryArc,
 } from "@/lib/universe";
 import { Landing } from "./Landing";
 import { GameCanvas } from "./GameCanvas";
 import { DialogueBox } from "./DialogueBox";
 
 type Phase = "select" | "booting" | "playing";
+
+type FinaleData = {
+  title: string;
+  resolution: string;
+  image: string;
+  outcome?: "victory" | "defeat";
+};
+
+/** Heat drawn by a dialogue misstep, judged by the NPC referee. */
+const OFFENSE_HEAT = { none: 0, minor: 12, grave: 35 } as const;
 
 const OPENING_OPTIONS = [
   "Who are you, really?",
@@ -80,13 +90,11 @@ export function World() {
   const [premise, setPremise] = useState<Premise | null>(null);
   const [scene, setScene] = useState<SceneData | null>(null);
   const [questHook, setQuestHook] = useState("");
-  const [story, setStory] = useState<StoryArc | null>(null);
+  const [bible, setBible] = useState<GameBible | null>(null);
   const [cluesFound, setCluesFound] = useState<boolean[]>([false, false, false]);
-  const [finale, setFinale] = useState<{
-    title: string;
-    resolution: string;
-    image: string;
-  } | null>(null);
+  /** The world's danger meter 0..100 — at 100 the run ends in defeat. */
+  const [heat, setHeat] = useState(0);
+  const [finale, setFinale] = useState<FinaleData | null>(null);
   const [finaleLoading, setFinaleLoading] = useState(false);
   const [inventory, setInventory] = useState<string[]>([]);
 
@@ -120,11 +128,7 @@ export function World() {
   // Preload caches — everything the player might do next is already made.
   const voiceCache = useRef<Map<string, Promise<string | null>>>(new Map());
   const dialogueCache = useRef<Map<string, Promise<DialogueResponse>>>(new Map());
-  const finalePromise = useRef<Promise<{
-    title: string;
-    resolution: string;
-    image: string;
-  } | null> | null>(null);
+  const finalePromise = useRef<Promise<FinaleData | null> | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const voiceOnRef = useRef(voiceOn);
   voiceOnRef.current = voiceOn;
@@ -194,26 +198,22 @@ export function World() {
    * Walking in and talking is then instant end to end.
    */
   const prefetchConversation = useCallback(
-    (thePremise: Premise, arc: StoryArc, hook: string, s: SceneData) => {
+    (theBible: GameBible, s: SceneData) => {
       const npc = s.npc;
-      if (!npc) return;
+      if (!npc || typeof s.clueIndex !== "number") return;
       // opening line, performed
       fetchVoice(npc.opening, npc.voice, voiceStyle(npc, "wary"));
-      const clue =
-        typeof s.clueIndex === "number" ? arc.clues[s.clueIndex] : null;
       for (const option of OPENING_OPTIONS) {
         const key = `${s.id}|${option}`;
         if (dialogueCache.current.has(key)) continue;
         const p = post<DialogueResponse>("/api/dialogue", {
-          premise: thePremise,
-          npc,
-          sceneTitle: s.title,
-          questHook: hook,
+          bible: theBible,
+          npcIndex: s.clueIndex,
           history: [{ speaker: "npc", text: npc.opening }],
           playerLine: option,
-          clue,
           clueFound: false,
           exchanges: 1,
+          heat: 0,
         }).then((reply) => {
           addCalls(1);
           fetchVoice(reply.line, npc.voice, voiceStyle(npc, reply.mood));
@@ -227,23 +227,17 @@ export function World() {
   );
 
   const prefetchInterior = useCallback(
-    (thePremise: Premise, arc: StoryArc, hook: string, h: Hotspot) => {
-      if (!h.interiorPrompt || interiorPromises.current.has(h.id)) return;
+    (theBible: GameBible, h: Hotspot) => {
+      if (typeof h.clueIndex !== "number" || interiorPromises.current.has(h.id))
+        return;
       const p = post<{ scene: SceneData }>("/api/scene", {
-        premise: thePremise,
-        story: arc,
-        building: {
-          id: h.id,
-          name: h.name,
-          interiorPrompt: h.interiorPrompt,
-          clueIndex: h.clueIndex,
-        },
-        questHook: hook,
+        bible: theBible,
+        roomIndex: h.clueIndex,
       }).then(({ scene: s }) => {
         scenesRef.current.set(s.id, s);
-        addCalls(2); // interior = level-design text + image
+        addCalls(2); // interior = layout text + image
         setInteriorsReady((r) => r + 1);
-        prefetchConversation(thePremise, arc, hook, s);
+        prefetchConversation(theBible, s);
         return s;
       });
       p.catch(() => interiorPromises.current.delete(h.id));
@@ -268,8 +262,9 @@ export function World() {
       dialogueCache.current = new Map();
       finalePromise.current = null;
 
-      setStory(null);
+      setBible(null);
       setCluesFound([false, false, false]);
+      setHeat(0);
       setFinale(null);
       setFinaleLoading(false);
       setGenCalls(0);
@@ -277,40 +272,38 @@ export function World() {
       setInventory([]);
 
       try {
-        // 1) Expand the player's idea into a universe + hidden story arc.
-        setBootStatus("Reading your idea…");
-        const { spec } = await post<{
-          spec: {
-            title: string;
-            setup: string;
-            styleBible: string;
-            story: StoryArc;
-          };
-        }>("/api/universe", { idea });
+        // 1) The planner authors the COMPLETE game bible from the player's
+        //    idea: universe, story spine, every room, every NPC, fail states.
+        //    Every later model call referees against this one document.
+        setBootStatus("Writing your game's bible…");
+        const { bible: theBible } = await post<{ bible: GameBible }>(
+          "/api/universe",
+          { idea }
+        );
         const chosen: Premise = {
           id: "custom",
-          title: spec.title,
+          title: theBible.title,
           tagline: "",
-          setup: spec.setup,
+          setup: theBible.protagonist,
           emoji: "✦",
-          styleBible: spec.styleBible,
-          goal: "",
+          styleBible: theBible.styleBible,
+          goal: theBible.story.goal,
           goalLabel: "",
           goalEmoji: "",
           clockLabel: "",
         };
         setPremise(chosen);
-        setStory(spec.story);
-        addCalls(1); // universe spec
+        setBible(theBible);
+        addCalls(1); // the game bible
 
-        // 2) Paint the opening street.
+        // 2) Paint the opening street from the bible's plan.
         setBootStatus("Painting your opening scene…");
-        const { scene: street, questHook: hook } = await post<{
-          scene: SceneData;
-          questHook: string;
-        }>("/api/scene", { premise: chosen, story: spec.story });
-        addCalls(2); // street = level design + image
-        setQuestHook(hook || spec.story.goal);
+        const { scene: street } = await post<{ scene: SceneData }>(
+          "/api/scene",
+          { bible: theBible }
+        );
+        addCalls(2); // street = layout + image
+        setQuestHook(theBible.story.goal);
         showScene(street);
         setPhase("playing");
 
@@ -331,15 +324,15 @@ export function World() {
         // 4) Pre-generate every interior while the player walks around.
         street.hotspots
           .filter((h) => h.kind === "building")
-          .forEach((h) =>
-            prefetchInterior(chosen, spec.story, hook || spec.story.goal, h)
-          );
+          .forEach((h) => prefetchInterior(theBible, h));
 
-        // 5) Pre-generate the FINALE too — the ending is already known to the
-        //    story engine, so "Unravel the truth" can land instantly.
-        finalePromise.current = post<{
-          finale: { title: string; resolution: string; image: string };
-        }>("/api/finale", { premise: chosen, story: spec.story })
+        // 5) Pre-generate the VICTORY finale too — the ending is already
+        //    written in the bible, so "Unravel the truth" can land instantly.
+        //    (A defeat finale is generated live if the run sours.)
+        finalePromise.current = post<{ finale: FinaleData }>("/api/finale", {
+          bible: theBible,
+          outcome: "victory",
+        })
           .then(({ finale: f }) => {
             addCalls(2);
             fetchVoice(f.resolution, "Charon", "As a storyteller closing a mystery, say this with slow gravity");
@@ -389,12 +382,16 @@ export function World() {
           const item = h.grantsItem;
           setInventory((inv) => (inv.includes(item) ? inv : [...inv, item]));
         }
+        // Risky actions were authored risky in the bible — they draw heat.
+        const drawn = h.suspicion ?? 0;
+        if (drawn > 0) setHeat((v) => Math.min(100, v + drawn));
+        const outcomeLine = h.outcome
+          ? h.grantsItem
+            ? `${h.outcome} (+ ${h.grantsItem})`
+            : h.outcome
+          : `${h.name} — done.`;
         setAmbient(
-          h.outcome
-            ? h.grantsItem
-              ? `${h.outcome} (+ ${h.grantsItem})`
-              : h.outcome
-            : `${h.name} — done.`
+          drawn > 0 && h.risk ? `${outcomeLine} — ${h.risk}` : outcomeLine
         );
         setTimeout(() => setAmbient(null), 4500);
         // one-shot: consume the action
@@ -426,12 +423,12 @@ export function World() {
         return;
       }
 
-      if (h.kind === "building" && story) {
+      if (h.kind === "building" && bible) {
         setEntering(h.name);
         try {
           let interior = scenesRef.current.get(h.id);
           if (!interior) {
-            prefetchInterior(premise, story, questHook, h);
+            prefetchInterior(bible, h);
             interior = await interiorPromises.current.get(h.id);
           }
           if (interior) showScene(interior);
@@ -443,43 +440,56 @@ export function World() {
         }
       }
     },
-    [premise, scene, story, questHook, prefetchInterior, showScene, speak, stopVoice]
+    [premise, scene, bible, prefetchInterior, showScene, speak, stopVoice]
   );
 
   const onSay = useCallback(
     async (line: string) => {
-      if (!premise || !scene?.npc || !dialogue) return;
+      if (!bible || !scene?.npc || !dialogue) return;
       const history: DialogueTurn[] = [
         ...dialogue.history,
         { speaker: "player", text: line },
       ];
       setDialogue({ ...dialogue, history, options: [], thinking: true });
       const clueIndex = scene.clueIndex;
-      const hasClue = typeof clueIndex === "number" && story;
+      const hasClue = typeof clueIndex === "number";
+      if (!hasClue) return;
       try {
         // First exchange with a canned opener? The reply (and its audio) were
         // pre-generated the moment this room finished building — instant.
+        // (Skip the cache once heat is high: the NPC's wariness must show.)
         const isFirstTurn =
           history.filter((t) => t.speaker === "player").length === 1;
-        const cached = isFirstTurn
-          ? dialogueCache.current.get(`${scene.id}|${line}`)
-          : undefined;
+        const cached =
+          isFirstTurn && heat < 60
+            ? dialogueCache.current.get(`${scene.id}|${line}`)
+            : undefined;
         let reply: DialogueResponse;
         if (cached) {
           reply = await cached;
         } else {
           reply = await post<DialogueResponse>("/api/dialogue", {
-            premise,
-            npc: dialogue.npc,
-            sceneTitle: scene.title,
-            questHook,
+            bible,
+            npcIndex: clueIndex,
             history: dialogue.history,
             playerLine: line,
-            clue: hasClue ? story.clues[clueIndex] : null,
-            clueFound: hasClue ? cluesFound[clueIndex] : false,
+            clueFound: cluesFound[clueIndex],
             exchanges: history.filter((t) => t.speaker === "player").length,
+            inventory,
+            heat,
           });
           addCalls(1); // dialogue turn
+        }
+        // The referee's verdict on the player's line: mistakes draw heat.
+        const offense = reply.offense ?? "none";
+        if (offense !== "none") {
+          setHeat((v) => Math.min(100, v + OFFENSE_HEAT[offense]));
+          setAmbient(
+            offense === "grave"
+              ? `${dialogue.npc.name} turns cold. ${bible.heatLabel} spreads through the street.`
+              : `That stung. ${bible.heatLabel} rises.`
+          );
+          setTimeout(() => setAmbient(null), 4500);
         }
         if (reply.questUpdate?.trim()) setQuestHook(reply.questUpdate.trim());
         if (reply.clueRevealed && hasClue && !cluesFound[clueIndex]) {
@@ -512,35 +522,57 @@ export function World() {
         });
       }
     },
-    [premise, scene, dialogue, questHook, story, cluesFound, speak, addCalls, inventory]
+    [bible, scene, dialogue, heat, cluesFound, speak, addCalls, inventory]
   );
 
-  const allCluesFound = story ? cluesFound.every(Boolean) : false;
+  const allCluesFound = bible ? cluesFound.every(Boolean) : false;
 
-  const runFinale = useCallback(async () => {
-    if (!premise || !story || finaleLoading) return;
-    stopVoice();
-    setDialogue(null);
-    setFinaleLoading(true);
-    try {
-      // Pre-generated at boot; falls back to a live call if that failed.
-      let f = finalePromise.current ? await finalePromise.current : null;
-      if (!f) {
-        const res = await post<{
-          finale: { title: string; resolution: string; image: string };
-        }>("/api/finale", { premise, story });
-        f = res.finale;
-        addCalls(2);
+  const runFinale = useCallback(
+    async (outcome: "victory" | "defeat" = "victory", reason?: string) => {
+      if (!bible || finaleLoading || finale) return;
+      stopVoice();
+      setDialogue(null);
+      setFinaleLoading(true);
+      try {
+        // Victory was pre-generated at boot; defeat is always a live call.
+        let f =
+          outcome === "victory" && finalePromise.current
+            ? await finalePromise.current
+            : null;
+        if (!f) {
+          const res = await post<{ finale: FinaleData }>("/api/finale", {
+            bible,
+            outcome,
+            reason,
+          });
+          f = res.finale;
+          addCalls(2);
+        }
+        setFinale({ ...f, outcome: f.outcome ?? outcome });
+        speak(
+          f.resolution,
+          "Charon",
+          outcome === "victory"
+            ? "As a storyteller closing a mystery, say this with slow gravity"
+            : "As a storyteller mourning a downfall, say this with slow gravity"
+        );
+      } catch {
+        setError("The ending slipped away. Try again.");
+        setTimeout(() => setError(null), 4000);
+      } finally {
+        setFinaleLoading(false);
       }
-      setFinale(f);
-      speak(f.resolution, "Charon", "As a storyteller closing a mystery, say this with slow gravity");
-    } catch {
-      setError("The ending slipped away. Try again.");
-      setTimeout(() => setError(null), 4000);
-    } finally {
-      setFinaleLoading(false);
+    },
+    [bible, finale, finaleLoading, speak, stopVoice, addCalls]
+  );
+
+  // The hard fail state: the danger meter maxing out ends the run.
+  useEffect(() => {
+    if (heat >= 100 && bible && !finale && !finaleLoading) {
+      const hard = bible.failStates.find((f) => f.kind === "hard");
+      runFinale("defeat", hard?.trigger ?? `the ${bible.heatLabel} meter reached 100`);
     }
-  }, [premise, story, finaleLoading, speak, stopVoice, addCalls]);
+  }, [heat, bible, finale, finaleLoading, runFinale]);
 
   const closeDialogue = useCallback(() => {
     stopVoice();
@@ -553,7 +585,8 @@ export function World() {
     setPremise(null);
     setScene(null);
     setDialogue(null);
-    setStory(null);
+    setBible(null);
+    setHeat(0);
     setCluesFound([false, false, false]);
     setFinale(null);
     setFinaleLoading(false);
@@ -637,7 +670,7 @@ export function World() {
               ))}
             </div>
           )}
-          {story && (
+          {bible && (
             <div className="panel flex w-fit items-center gap-2 rounded-full px-3 py-1.5">
               <Search size={12} strokeWidth={2.5} className="text-primary" />
               <span className="flex gap-1">
@@ -655,13 +688,37 @@ export function World() {
               </span>
               {allCluesFound && !finale && (
                 <button
-                  onClick={runFinale}
+                  onClick={() => runFinale("victory")}
                   disabled={finaleLoading}
                   className="pointer-events-auto ml-1 rounded-full bg-primary px-3 py-1 text-[11px] font-bold text-white transition enabled:hover:brightness-105 enabled:active:scale-95 disabled:opacity-60"
                 >
                   {finaleLoading ? "Unraveling…" : "Unravel the truth"}
                 </button>
               )}
+            </div>
+          )}
+          {bible && heat > 0 && (
+            <div className="panel flex w-fit items-center gap-2 rounded-full px-3 py-1.5">
+              <Flame
+                size={12}
+                strokeWidth={2.5}
+                className={heat >= 60 ? "text-health" : "text-inksoft"}
+              />
+              <span className="text-[10px] font-bold uppercase tracking-widest text-inksoft">
+                {bible.heatLabel}
+              </span>
+              <span className="relative h-1.5 w-16 overflow-hidden rounded-full bg-ink/15">
+                <span
+                  className="absolute inset-y-0 left-0 rounded-full transition-all duration-500"
+                  style={{
+                    width: `${heat}%`,
+                    background: heat >= 60 ? "#b34a44" : "#b3862f",
+                  }}
+                />
+              </span>
+              <span className="text-[11px] font-bold tabular-nums text-ink">
+                {heat}
+              </span>
             </div>
           )}
         </div>
@@ -769,7 +826,7 @@ export function World() {
                 className="max-w-xl"
               >
                 <p className="text-xs font-bold uppercase tracking-[0.3em] text-primary2">
-                  The truth
+                  {finale.outcome === "defeat" ? "The fall" : "The truth"}
                 </p>
                 <h2 className="mt-2 font-display text-4xl font-extrabold text-white">
                   {finale.title}

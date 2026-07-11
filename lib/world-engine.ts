@@ -4,11 +4,12 @@ import type { Premise } from "./types";
 import type {
   DialogueResponse,
   DialogueTurn,
+  GameBible,
   Hotspot,
-  NpcDef,
+  PlannedAction,
+  PlannedItem,
   Rect,
   SceneData,
-  StoryArc,
 } from "./universe";
 
 /** Appended to every scene render so the world reads as one retro RPG overworld. */
@@ -36,22 +37,165 @@ function clampRect(r: Rect): Rect {
 }
 
 /* ------------------------------------------------------------------ */
-/* Universe from a player's freeform idea                              */
+/* The Game Bible — one planner call authors the whole game upfront    */
 /* ------------------------------------------------------------------ */
 
-const universeSchema = {
+const VOICE_NAMES = [
+  "Puck",
+  "Charon",
+  "Kore",
+  "Fenrir",
+  "Aoede",
+  "Leda",
+  "Orus",
+  "Zephyr",
+];
+
+const plannedItemSchema = {
+  type: Type.OBJECT,
+  properties: {
+    name: { type: Type.STRING, description: "e.g. 'Rusty temple key', 'Torn ledger page'" },
+    significance: {
+      type: Type.STRING,
+      description: "Why this object matters to the story, one line.",
+    },
+  },
+  required: ["name", "significance"],
+};
+
+const plannedActionSchema = {
+  type: Type.OBJECT,
+  properties: {
+    name: {
+      type: Type.STRING,
+      description: "Imperative, 2-5 words: 'Ring the temple bell'",
+    },
+    outcome: {
+      type: Type.STRING,
+      description: "What happens when performed, max 20 words, vivid.",
+    },
+    grantsItem: {
+      type: Type.STRING,
+      description: "Item gained by this action, or empty string.",
+    },
+    risk: {
+      type: Type.STRING,
+      description:
+        "When suspicion > 0: what goes wrong / who notices, max 15 words. Empty string when harmless.",
+    },
+    suspicion: {
+      type: Type.INTEGER,
+      description:
+        "Heat this action draws on the danger meter: 0 harmless, 15 risky, 30 reckless. Most actions are 0; make 1-2 per game genuinely costly.",
+    },
+  },
+  required: ["name", "outcome", "grantsItem", "risk", "suspicion"],
+};
+
+const npcPlanSchema = {
+  type: Type.OBJECT,
+  properties: {
+    name: { type: Type.STRING },
+    role: { type: Type.STRING, description: "e.g. 'chaiwala', 'retired archivist'" },
+    persona: {
+      type: Type.STRING,
+      description: "2 sentences: temperament, their stake in the story, what they want.",
+    },
+    knows: {
+      type: Type.STRING,
+      description: "The information they hold — their guarded clue, in their own words.",
+    },
+    wants: {
+      type: Type.STRING,
+      description: "What softens them / earns their trust, one line.",
+    },
+    fears: { type: Type.STRING, description: "What they are afraid of, one line." },
+    turnsHostileIf: {
+      type: Type.STRING,
+      description:
+        "The ONE player mistake that makes them snap shut — an accusation, naming the wrong person, touching something sacred. Concrete and specific, one line.",
+    },
+    opening: {
+      type: Type.STRING,
+      description:
+        "First spoken line when the player approaches — a dramatic hook signaling conflict, fear, or a secret in ≤18 words. May include one Hindi/regional word. Never a plain greeting.",
+    },
+    quirk: {
+      type: Type.STRING,
+      description:
+        "A distinctive verbal habit, e.g. 'ends questions with hain na?', 'quotes his late wife'.",
+    },
+    voice: {
+      type: Type.STRING,
+      enum: VOICE_NAMES,
+      description:
+        "TTS voice fitting the character: Charon/Orus = deep older male; Fenrir = gravelly, intense; Puck/Zephyr = quick, energetic; Kore = warm neutral female; Aoede/Leda = bright younger female.",
+    },
+  },
+  required: [
+    "name",
+    "role",
+    "persona",
+    "knows",
+    "wants",
+    "fears",
+    "turnsHostileIf",
+    "opening",
+    "quirk",
+    "voice",
+  ],
+};
+
+const roomPlanSchema = {
+  type: Type.OBJECT,
+  properties: {
+    name: { type: Type.STRING, description: "e.g. 'Chai Tapri', 'Old Bookshop'" },
+    hint: { type: Type.STRING, description: "Near-door hint on the street, max 8 words." },
+    description: {
+      type: Type.STRING,
+      description: "What it looks like inside, 2 sentences — used to paint the room.",
+    },
+    storyRole: {
+      type: Type.STRING,
+      description: "What this room contributes to the story spine, one line.",
+    },
+    hazard: {
+      type: Type.STRING,
+      description:
+        "The room-specific way to get in trouble here, one line. e.g. 'Prying open the shrine box while the priest watches.'",
+    },
+    items: {
+      type: Type.ARRAY,
+      items: plannedItemSchema,
+      description: "1-2 collectible objects inside, story-flavored.",
+    },
+    actions: {
+      type: Type.ARRAY,
+      items: plannedActionSchema,
+      description: "1-2 environmental interactions inside. At least one should carry risk.",
+    },
+  },
+  required: ["name", "hint", "description", "storyRole", "hazard", "items", "actions"],
+};
+
+const bibleSchema = {
   type: Type.OBJECT,
   properties: {
     title: { type: Type.STRING, description: "World name, 2-4 words." },
-    setup: {
+    setting: {
       type: Type.STRING,
       description:
-        "Two second-person sentences: who the player is and what pulls them into this world. Faithful to the player's idea; invent the missing pieces.",
+        "Place, era, atmosphere — 3-4 sentences. Faithful to the player's idea; invent the missing pieces.",
     },
     styleBible: {
       type: Type.STRING,
       description:
-        "One sentence of PALETTE and MOOD only — the rendering style is always 16-bit pixel-art and is fixed elsewhere. Time of day, color palette, weather, atmosphere. e.g. 'Warm dusk palette, monsoon-wet stone, lantern glows.'",
+        "One sentence of PALETTE and MOOD only — rendering style is fixed elsewhere. e.g. 'Warm dusk palette, monsoon-wet stone, lantern glows.'",
+    },
+    protagonist: {
+      type: Type.STRING,
+      description:
+        "Two second-person sentences: who the player is and what pulls them into this world.",
     },
     story: {
       type: Type.OBJECT,
@@ -60,8 +204,7 @@ const universeSchema = {
       properties: {
         goal: {
           type: Type.STRING,
-          description:
-            "Player-facing objective, one line, max 12 words. e.g. 'Find out who locked the brass chest — and why.'",
+          description: "Player-facing objective, one line, max 12 words.",
         },
         secret: {
           type: Type.STRING,
@@ -72,162 +215,259 @@ const universeSchema = {
           type: Type.ARRAY,
           items: { type: Type.STRING },
           description:
-            "Exactly 3 concrete clues that together expose the secret. Each will be guarded by one character. Each one line.",
+            "Exactly 3 concrete clues that together expose the secret. Clue i is guarded by NPC i in room i. Each one line.",
         },
       },
       required: ["goal", "secret", "clues"],
     },
+    beats: {
+      type: Type.ARRAY,
+      items: { type: Type.STRING },
+      description:
+        "3-5 story beats: what must happen, in order, for the mystery to resolve. Each one line.",
+    },
+    winCondition: {
+      type: Type.STRING,
+      description:
+        "Concretely: what must be true for the player to win, one line. e.g. 'All three clues gathered, then confront the truth.'",
+    },
+    heatLabel: {
+      type: Type.STRING,
+      description:
+        "One-word name for this world's danger meter, fitting the fiction: 'Suspicion', 'Alarm', 'Curse', 'Scandal'.",
+    },
+    failStates: {
+      type: Type.ARRAY,
+      description:
+        "2-3 ways the run can sour. Exactly ONE must be kind 'hard' with trigger 'the danger meter reaches 100'; the rest are 'soft' setbacks (an NPC turns hostile, an item is lost).",
+      items: {
+        type: Type.OBJECT,
+        properties: {
+          trigger: { type: Type.STRING, description: "What sets it off, one line." },
+          kind: { type: Type.STRING, enum: ["soft", "hard"] },
+          consequence: { type: Type.STRING, description: "What it costs the player, one line." },
+        },
+        required: ["trigger", "kind", "consequence"],
+      },
+    },
+    street: {
+      type: Type.OBJECT,
+      description: "The open street/exterior connecting the three rooms.",
+      properties: {
+        name: { type: Type.STRING, description: "Name of this street/area, 2-4 words." },
+        description: {
+          type: Type.STRING,
+          description: "What the street looks like, 2 sentences — used to paint it.",
+        },
+        items: {
+          type: Type.ARRAY,
+          items: plannedItemSchema,
+          description: "1-2 collectible objects lying in the open.",
+        },
+        actions: {
+          type: Type.ARRAY,
+          items: plannedActionSchema,
+          description: "1-2 environmental interactions in the open.",
+        },
+      },
+      required: ["name", "description", "items", "actions"],
+    },
+    rooms: {
+      type: Type.ARRAY,
+      items: roomPlanSchema,
+      description:
+        "Exactly 3 enterable places. Room 1 houses the keeper of clue 1, room 2 of clue 2, room 3 of clue 3.",
+    },
+    npcs: {
+      type: Type.ARRAY,
+      items: npcPlanSchema,
+      description:
+        "Exactly 3 characters. NPC i lives in room i and guards clue i — their persona must make them a believable keeper of it.",
+    },
   },
-  required: ["title", "setup", "styleBible", "story"],
+  required: [
+    "title",
+    "setting",
+    "styleBible",
+    "protagonist",
+    "story",
+    "beats",
+    "winCondition",
+    "heatLabel",
+    "failStates",
+    "street",
+    "rooms",
+    "npcs",
+  ],
 };
 
-export type UniverseSpec = {
-  title: string;
-  setup: string;
-  styleBible: string;
-  story: StoryArc;
-};
+function clampSuspicion(v: unknown): number {
+  const n = Math.round(Number(v) || 0);
+  return Math.max(0, Math.min(40, n));
+}
 
-/** Expand a player's freeform scene idea into a playable universe + story arc. */
-export async function expandUniverse(idea: string): Promise<UniverseSpec> {
+/**
+ * The planner: expand a player's freeform idea into the complete game —
+ * universe, story spine, every room, every NPC, every fail state. Made once;
+ * every later model call receives this document and referees against it.
+ */
+export async function generateBible(idea: string): Promise<GameBible> {
   const res = await ai().models.generateContent({
     model: TEXT_MODEL,
-    contents: `PLAYER'S IDEA FOR THE OPENING SCENE / WORLD:\n${idea}\n\nTurn this into a playable adventure-game universe with ONE convergent mystery.`,
+    contents: `PLAYER'S IDEA FOR THE OPENING SCENE / WORLD:\n${idea}\n\nAuthor the COMPLETE game bible for this idea: universe, one convergent mystery, story beats, the street, all 3 rooms, all 3 characters, and the failure rules. Everything downstream is generated from this document, so make every field concrete and specific — but keep prose tight: no field longer than its brief asks for.`,
     config: {
       systemInstruction:
-        "You are the creative director of an explorable adventure game rooted in India. Honor the player's idea — its named details, era, and tone. Unless the idea explicitly names a non-Indian setting, ground the world in India: real textures of its streets, ghats, hills, bazaars, monsoons, festivals, myths and folklore, with authentic names — never caricature. Design a single tight mystery: a goal, a hidden secret, and exactly 3 clues that converge on it. Return ONLY the structured object.",
+        "You are the creative director authoring the complete design bible of an explorable adventure game rooted in India. Honor the player's idea — its named details, era, and tone. Unless the idea explicitly names a non-Indian setting, ground the world in India: real textures of its streets, ghats, hills, bazaars, monsoons, festivals, myths and folklore, with authentic names — never caricature. Design ONE tight mystery: a goal, a hidden secret, and exactly 3 clues that converge on it, each guarded by one character in one room. Design danger too: each character has a hostility tripwire, some actions draw heat, and one hard fail state ends the run at 100 heat. Return ONLY the structured object.",
       responseMimeType: "application/json",
-      responseSchema: universeSchema,
+      responseSchema: bibleSchema,
       temperature: 1.0,
     },
   });
-  if (!res.text) throw new Error("Empty universe spec from text model.");
-  const spec = JSON.parse(res.text) as UniverseSpec;
-  spec.story.clues = (spec.story.clues ?? []).slice(0, 3);
-  while (spec.story.clues.length < 3) {
-    spec.story.clues.push("A detail someone here is hiding.");
+  if (!res.text) throw new Error("Empty game bible from text model.");
+  const bible = JSON.parse(res.text) as GameBible;
+
+  // Normalize: the world engine hard-depends on 3 rooms / 3 NPCs / 3 clues.
+  bible.story.clues = (bible.story.clues ?? []).slice(0, 3);
+  while (bible.story.clues.length < 3) {
+    bible.story.clues.push("A detail someone here is hiding.");
   }
-  return spec;
+  bible.rooms = (bible.rooms ?? []).slice(0, 3);
+  bible.npcs = (bible.npcs ?? []).slice(0, 3);
+  if (bible.rooms.length < 3 || bible.npcs.length < 3) {
+    throw new Error("Planner returned an incomplete bible (rooms/npcs).");
+  }
+  bible.beats = (bible.beats ?? []).slice(0, 5);
+  bible.heatLabel = bible.heatLabel?.trim() || "Suspicion";
+  bible.failStates = (bible.failStates ?? []).slice(0, 3);
+  for (const room of bible.rooms) {
+    room.items = (room.items ?? []).slice(0, 2);
+    room.actions = (room.actions ?? []).slice(0, 2);
+    room.actions.forEach((a) => (a.suspicion = clampSuspicion(a.suspicion)));
+  }
+  bible.street.items = (bible.street.items ?? []).slice(0, 2);
+  bible.street.actions = (bible.street.actions ?? []).slice(0, 2);
+  bible.street.actions.forEach((a) => (a.suspicion = clampSuspicion(a.suspicion)));
+  for (const npc of bible.npcs) {
+    if (!VOICE_NAMES.includes(npc.voice)) npc.voice = "Kore";
+  }
+  return bible;
+}
+
+/**
+ * The bible as one canonical text block, prepended to EVERY downstream model
+ * call. Byte-identical across calls, so the provider's implicit prompt cache
+ * absorbs it; downstream models referee against this document instead of
+ * inventing the world.
+ */
+export function bibleBrief(b: GameBible): string {
+  const lines: string[] = [
+    `=== GAME BIBLE: ${b.title} ===`,
+    `SETTING: ${b.setting}`,
+    `PROTAGONIST: ${b.protagonist}`,
+    `GOAL: ${b.story.goal}`,
+    `THE HIDDEN SECRET (spoiler — see rules below): ${b.story.secret}`,
+    `STORY BEATS: ${b.beats.map((x, i) => `(${i + 1}) ${x}`).join(" ")}`,
+    `WIN CONDITION: ${b.winCondition}`,
+    `DANGER METER — "${b.heatLabel}" (0-100): careless play raises it; at 100 the run ends in defeat.`,
+    `FAIL STATES: ${b.failStates
+      .map((f) => `[${f.kind}] ${f.trigger} → ${f.consequence}`)
+      .join(" | ")}`,
+    `THE STREET — ${b.street.name}: ${b.street.description}`,
+  ];
+  b.rooms.forEach((r, i) => {
+    const npc = b.npcs[i];
+    lines.push(
+      `ROOM ${i + 1} — ${r.name}: ${r.description} Story role: ${r.storyRole} Hazard: ${r.hazard}`,
+      `  NPC ${i + 1}: ${npc.name}, ${npc.role}. ${npc.persona} Knows: ${npc.knows} Wants: ${npc.wants} Fears: ${npc.fears} TURNS HOSTILE IF: ${npc.turnsHostileIf}`,
+      `  CLUE ${i + 1} (guarded by ${npc.name}): ${b.story.clues[i]}`
+    );
+  });
+  lines.push(
+    `RULES: never reveal or foreshadow the hidden secret before the finale; never hand a clue to the player outside its keeper; stay consistent with every fact above.`
+  );
+  return lines.join("\n");
 }
 
 /* ------------------------------------------------------------------ */
-/* Scene generation                                                    */
+/* Scene generation — layout passes over the bible's authored content  */
 /* ------------------------------------------------------------------ */
 
-const streetSchema = {
+/** Shared hotspot builders: content comes from the bible, rects from layout. */
+function itemHotspots(
+  prefix: string,
+  planned: PlannedItem[],
+  rects: Rect[]
+): Hotspot[] {
+  return planned.map((it, i) => ({
+    id: `${prefix}-item${i}`,
+    kind: "item" as const,
+    name: it.name,
+    hint: it.significance.length <= 40 ? it.significance : "Something worth taking",
+    rect: clampRect(rects[i] ?? { x: 40 + i * 15, y: 60, w: 8, h: 8 }),
+    itemName: it.name,
+  }));
+}
+
+function actionHotspots(
+  prefix: string,
+  planned: PlannedAction[],
+  rects: Rect[]
+): Hotspot[] {
+  return planned.map((a, i) => ({
+    id: `${prefix}-act${i}`,
+    kind: "action" as const,
+    name: a.name,
+    hint: a.suspicion > 0 ? "Risky — but tempting" : "Worth a try",
+    rect: clampRect(rects[i] ?? { x: 20 + i * 40, y: 55, w: 10, h: 10 }),
+    outcome: a.outcome,
+    grantsItem: a.grantsItem?.trim() || undefined,
+    suspicion: a.suspicion > 0 ? a.suspicion : undefined,
+    risk: a.risk?.trim() || undefined,
+  }));
+}
+
+const streetLayoutSchema = {
   type: Type.OBJECT,
   properties: {
-    title: { type: Type.STRING, description: "Name of this street/area, 2-4 words." },
     ambient: {
       type: Type.STRING,
       description: "One atmospheric line shown on arrival, max 14 words.",
     },
-    questHook: {
-      type: Type.STRING,
-      description:
-        "A one-line open objective that pulls the player to explore, max 12 words.",
-    },
     imagePrompt: {
       type: Type.STRING,
       description:
-        "Rich prompt for a retro RPG overworld screen of this street/exterior (classic Pokemon town style, near-top-down). MOST of the frame is open walkable tile ground with NO people; a few small buildings with one big distinct door each sit around the edges. Authentic, era- and place-faithful detail for this universe. No text in image.",
+        "Rich prompt for a retro RPG overworld screen of THIS street as described in the bible (classic Pokemon town style, near-top-down). MOST of the frame is open walkable tile ground with NO people; the 3 named buildings with one big distinct door each sit around the edges; the listed items and action props are visible in the open. Authentic, era- and place-faithful detail. No text in image.",
     },
-    buildings: {
+    buildingRects: {
       type: Type.ARRAY,
+      items: rectSchema,
       description:
-        "Exactly 3 enterable places, positioned where their doorways appear in the image. Building 1 relates to clue 1, building 2 to clue 2, building 3 to clue 3.",
-      items: {
-        type: Type.OBJECT,
-        properties: {
-          name: { type: Type.STRING, description: "e.g. 'Chai Tapri', 'Old Bookshop'" },
-          hint: { type: Type.STRING, description: "Near-door hint, max 8 words." },
-          interiorPrompt: {
-            type: Type.STRING,
-            description: "Seed describing what is inside, one sentence.",
-          },
-          rect: rectSchema,
-        },
-        required: ["name", "hint", "interiorPrompt", "rect"],
-      },
+        "Exactly 3 boxes, in the SAME ORDER as the rooms listed in the bible, each positioned where that building's doorway appears in your image.",
     },
-    items: {
+    itemRects: {
       type: Type.ARRAY,
+      items: rectSchema,
       description:
-        "1-2 collectible objects lying in the OPEN walkable area (never inside buildings), positioned where they appear in the image. Small, pickable, story-flavored.",
-      items: {
-        type: Type.OBJECT,
-        properties: {
-          name: { type: Type.STRING, description: "e.g. 'Rusty temple key', 'Torn ledger page'" },
-          hint: { type: Type.STRING, description: "Near hint, max 8 words." },
-          rect: rectSchema,
-        },
-        required: ["name", "hint", "rect"],
-      },
+        "One box per listed street item, same order, in the OPEN walkable area where it appears in your image.",
     },
-    actions: {
+    actionRects: {
       type: Type.ARRAY,
+      items: rectSchema,
       description:
-        "1-2 environmental interactions in the open area: ring a bell, peek through a gate, search a cart, draw from a well. Each has a concrete outcome.",
-      items: {
-        type: Type.OBJECT,
-        properties: {
-          name: { type: Type.STRING, description: "Imperative, 2-5 words: 'Ring the temple bell'" },
-          hint: { type: Type.STRING, description: "Near hint, max 8 words." },
-          outcome: {
-            type: Type.STRING,
-            description: "What happens when performed, max 20 words, vivid.",
-          },
-          grantsItem: {
-            type: Type.STRING,
-            description: "Item gained by this action, or empty string.",
-          },
-          rect: rectSchema,
-        },
-        required: ["name", "hint", "outcome", "grantsItem", "rect"],
-      },
+        "One box per listed street action, same order, at the prop it uses in your image.",
     },
   },
-  required: ["title", "ambient", "questHook", "imagePrompt", "buildings", "items", "actions"],
+  required: ["ambient", "imagePrompt", "buildingRects", "itemRects", "actionRects"],
 };
 
-const interiorSchema = {
+const interiorLayoutSchema = {
   type: Type.OBJECT,
   properties: {
-    title: { type: Type.STRING, description: "Name of this interior, 2-4 words." },
     ambient: { type: Type.STRING, description: "One line on entering, max 14 words." },
     imagePrompt: {
       type: Type.STRING,
       description:
-        "Rich prompt for a retro RPG interior room (classic Pokemon house-interior style, near-top-down), with ONE character (the NPC) visible. Most of the frame is open walkable tiled floor; furniture hugs the walls. Authentic, era- and place-faithful detail for this universe. No text in image.",
-    },
-    npc: {
-      type: Type.OBJECT,
-      properties: {
-        name: { type: Type.STRING },
-        role: { type: Type.STRING, description: "e.g. 'chaiwala', 'retired archivist'" },
-        persona: {
-          type: Type.STRING,
-          description:
-            "2 sentences: temperament, what they know, what they want — and what they FEAR.",
-        },
-        opening: {
-          type: Type.STRING,
-          description:
-            "Their first spoken line when the player approaches — a dramatic hook that signals conflict, fear, or a secret in ≤18 words. May naturally include one Hindi/regional word (arre, beta, sahib…). Never a plain greeting.",
-        },
-        quirk: {
-          type: Type.STRING,
-          description:
-            "A distinctive verbal habit, e.g. 'ends questions with hain na?', 'speaks in hushed half-sentences', 'quotes his late wife'.",
-        },
-        voice: {
-          type: Type.STRING,
-          enum: ["Puck", "Charon", "Kore", "Fenrir", "Aoede", "Leda", "Orus", "Zephyr"],
-          description:
-            "TTS voice fitting the character: Charon/Orus = deep older male; Fenrir = gravelly, intense; Puck/Zephyr = quick, energetic; Kore = warm neutral female; Aoede/Leda = bright younger female.",
-        },
-      },
-      required: ["name", "role", "persona", "opening", "quirk", "voice"],
+        "Rich prompt for a retro RPG interior of THIS room as described in the bible (classic Pokemon house-interior style, near-top-down), with ONE character — the room's NPC — visible and matching their described role. Most of the frame is open walkable tiled floor; furniture hugs the walls. Authentic, era- and place-faithful detail. No text in image.",
     },
     npcZone: {
       ...rectSchema,
@@ -237,243 +477,168 @@ const interiorSchema = {
       ...rectSchema,
       description: "Where the exit door is (walk there to leave).",
     },
-    items: {
+    itemRects: {
       type: Type.ARRAY,
+      items: rectSchema,
       description:
-        "1-2 collectible objects visible in the room, on floors/tables, positioned where they appear. Story-flavored.",
-      items: {
-        type: Type.OBJECT,
-        properties: {
-          name: { type: Type.STRING },
-          hint: { type: Type.STRING, description: "Near hint, max 8 words." },
-          rect: rectSchema,
-        },
-        required: ["name", "hint", "rect"],
-      },
+        "One box per listed room item, same order, on floors/tables where it appears in your image.",
     },
-    actions: {
+    actionRects: {
       type: Type.ARRAY,
+      items: rectSchema,
       description:
-        "1-2 interactions in the room: climb out the window (alternate exit), open a chest, read a notice, light a lamp. Each has a concrete outcome.",
-      items: {
-        type: Type.OBJECT,
-        properties: {
-          name: { type: Type.STRING, description: "Imperative, 2-5 words" },
-          hint: { type: Type.STRING, description: "Near hint, max 8 words." },
-          outcome: { type: Type.STRING, description: "What happens, max 20 words." },
-          grantsItem: { type: Type.STRING, description: "Item gained, or empty string." },
-          leadsOutside: {
-            type: Type.BOOLEAN,
-            description: "True if this action exits the building (window, back door).",
-          },
-          rect: rectSchema,
-        },
-        required: ["name", "hint", "outcome", "grantsItem", "leadsOutside", "rect"],
-      },
+        "One box per listed room action, same order, at the prop it uses in your image.",
     },
   },
-  required: ["title", "ambient", "imagePrompt", "npc", "npcZone", "exitZone", "items", "actions"],
+  required: ["ambient", "imagePrompt", "npcZone", "exitZone", "itemRects", "actionRects"],
 };
 
-export async function generateStreetScene(
-  premise: Premise,
-  story: StoryArc
-): Promise<SceneData & { questHook: string }> {
+export async function generateStreetScene(bible: GameBible): Promise<SceneData> {
   const res = await ai().models.generateContent({
     model: TEXT_MODEL,
     contents: [
-      `UNIVERSE: ${premise.title} — ${premise.setup}`,
-      `ART DIRECTION: ${premise.styleBible}`,
-      `THE STORY THIS WORLD CONVERGES ON — goal: ${story.goal}`,
-      `Clue 1: ${story.clues[0]}`,
-      `Clue 2: ${story.clues[1]}`,
-      `Clue 3: ${story.clues[2]}`,
-      "Design the opening explorable street. Each of the 3 buildings must plausibly house the keeper of its matching clue. Set questHook to the story goal, phrased for the player.",
+      bibleBrief(bible),
+      "",
+      "TASK: lay out the opening street exactly as the bible describes it — you are placing, not inventing.",
+      `Buildings to place, in order: ${bible.rooms
+        .map((r, i) => `${i + 1}. ${r.name}`)
+        .join("  ")}`,
+      `Street items to place, in order: ${bible.street.items
+        .map((it, i) => `${i + 1}. ${it.name}`)
+        .join("  ") || "(none)"}`,
+      `Street actions to place, in order: ${bible.street.actions
+        .map((a, i) => `${i + 1}. ${a.name}`)
+        .join("  ") || "(none)"}`,
+      "Write the imagePrompt for this exact street and return the boxes where everything sits in that image.",
     ].join("\n"),
     config: {
       systemInstruction:
-        "You are the level designer of an explorable adventure game. You design scenes as images plus interactive hotspots with accurate percent-coordinate boxes. Doorways sit at ground level (y of the box bottom around 55-75). Return ONLY the structured object.",
+        "You are the level-layout artist of an explorable adventure game. The game bible has already authored all content; your job is composition: paint the described street and return accurate percent-coordinate boxes for the listed buildings, items, and actions. Doorways sit at ground level (y of the box bottom around 55-75). Return ONLY the structured object.",
       responseMimeType: "application/json",
-      responseSchema: streetSchema,
+      responseSchema: streetLayoutSchema,
       temperature: 1.0,
     },
   });
-  if (!res.text) throw new Error("Empty street spec from text model.");
+  if (!res.text) throw new Error("Empty street layout from text model.");
   const spec = JSON.parse(res.text) as {
-    title: string;
     ambient: string;
-    questHook: string;
     imagePrompt: string;
-    buildings: { name: string; hint: string; interiorPrompt: string; rect: Rect }[];
-    items?: { name: string; hint: string; rect: Rect }[];
-    actions?: {
-      name: string;
-      hint: string;
-      outcome: string;
-      grantsItem?: string;
-      rect: Rect;
-    }[];
+    buildingRects: Rect[];
+    itemRects: Rect[];
+    actionRects: Rect[];
   };
 
   const img = await generateImage(
     `${spec.imagePrompt} ${PIXEL_STYLE}`,
-    premise.styleBible,
+    bible.styleBible,
     null
   );
 
-  const hotspots: Hotspot[] = spec.buildings.slice(0, 3).map((b, i) => ({
+  const hotspots: Hotspot[] = bible.rooms.map((room, i) => ({
     id: `b${i}`,
     kind: "building" as const,
-    name: b.name,
-    hint: b.hint,
-    rect: clampRect(b.rect),
-    interiorPrompt: b.interiorPrompt,
+    name: room.name,
+    hint: room.hint,
+    rect: clampRect(spec.buildingRects[i] ?? { x: 10 + i * 30, y: 30, w: 18, h: 22 }),
+    interiorPrompt: room.description,
     clueIndex: i,
   }));
-  (spec.items ?? []).slice(0, 2).forEach((it, i) =>
-    hotspots.push({
-      id: `street-item${i}`,
-      kind: "item",
-      name: it.name,
-      hint: it.hint,
-      rect: clampRect(it.rect),
-      itemName: it.name,
-    })
-  );
-  (spec.actions ?? []).slice(0, 2).forEach((a, i) =>
-    hotspots.push({
-      id: `street-act${i}`,
-      kind: "action",
-      name: a.name,
-      hint: a.hint,
-      rect: clampRect(a.rect),
-      outcome: a.outcome,
-      grantsItem: a.grantsItem?.trim() || undefined,
-    })
-  );
+  hotspots.push(...itemHotspots("street", bible.street.items, spec.itemRects ?? []));
+  hotspots.push(...actionHotspots("street", bible.street.actions, spec.actionRects ?? []));
 
   return {
     id: "street",
     kind: "street",
-    title: spec.title,
+    title: bible.street.name,
     ambient: spec.ambient,
     image: toDataUrl(img.b64, img.mimeType),
     hotspots,
-    questHook: spec.questHook,
   };
 }
 
 export async function generateInteriorScene(
-  premise: Premise,
-  building: {
-    id: string;
-    name: string;
-    interiorPrompt: string;
-    clueIndex?: number;
-  },
-  questHook: string,
-  story?: StoryArc
+  bible: GameBible,
+  roomIndex: number
 ): Promise<SceneData> {
-  const clue =
-    story && typeof building.clueIndex === "number"
-      ? story.clues[building.clueIndex]
-      : null;
+  const room = bible.rooms[roomIndex];
+  const npc = bible.npcs[roomIndex];
+  if (!room || !npc) throw new Error(`No room ${roomIndex} in the bible.`);
+  const id = `b${roomIndex}`;
+
   const res = await ai().models.generateContent({
     model: TEXT_MODEL,
     contents: [
-      `UNIVERSE: ${premise.title} — ${premise.setup}`,
-      `ART DIRECTION: ${premise.styleBible}`,
-      `WORLD QUEST HOOK: ${questHook}`,
-      `PLACE: "${building.name}" — ${building.interiorPrompt}`,
-      clue
-        ? `THIS PLACE'S NPC GUARDS THIS CLUE (they know it and can be persuaded to share it): ${clue}`
-        : "",
-      "Design the interior of this place and the single NPC inside it. Their persona must make them a believable keeper of the clue above.",
-    ]
-      .filter(Boolean)
-      .join("\n"),
+      bibleBrief(bible),
+      "",
+      `TASK: lay out ROOM ${roomIndex + 1} — "${room.name}" — exactly as the bible describes it, with ${npc.name} (${npc.role}) visible inside. You are placing, not inventing.`,
+      `Room items to place, in order: ${room.items
+        .map((it, i) => `${i + 1}. ${it.name}`)
+        .join("  ") || "(none)"}`,
+      `Room actions to place, in order: ${room.actions
+        .map((a, i) => `${i + 1}. ${a.name}`)
+        .join("  ") || "(none)"}`,
+      "Write the imagePrompt for this exact room and return the boxes: npcZone, exitZone, and one box per listed item and action.",
+    ].join("\n"),
     config: {
       systemInstruction:
-        "You are the level + character designer of an explorable adventure game. Percent-coordinate boxes must match where things appear in the image you describe. Return ONLY the structured object.",
+        "You are the level-layout artist of an explorable adventure game. The game bible has already authored all content; your job is composition: paint the described room and return accurate percent-coordinate boxes matching your image. Return ONLY the structured object.",
       responseMimeType: "application/json",
-      responseSchema: interiorSchema,
+      responseSchema: interiorLayoutSchema,
       temperature: 1.0,
     },
   });
-  if (!res.text) throw new Error("Empty interior spec from text model.");
+  if (!res.text) throw new Error("Empty interior layout from text model.");
   const spec = JSON.parse(res.text) as {
-    title: string;
     ambient: string;
     imagePrompt: string;
-    npc: NpcDef;
     npcZone: Rect;
     exitZone: Rect;
-    items?: { name: string; hint: string; rect: Rect }[];
-    actions?: {
-      name: string;
-      hint: string;
-      outcome: string;
-      grantsItem?: string;
-      leadsOutside?: boolean;
-      rect: Rect;
-    }[];
+    itemRects: Rect[];
+    actionRects: Rect[];
   };
 
   const img = await generateImage(
     `${spec.imagePrompt} ${PIXEL_STYLE}`,
-    premise.styleBible,
+    bible.styleBible,
     null
   );
 
   const hotspots: Hotspot[] = [
     {
-      id: `${building.id}-npc`,
+      id: `${id}-npc`,
       kind: "npc",
-      name: spec.npc.name,
-      hint: `${spec.npc.role} — press E to talk`,
+      name: npc.name,
+      hint: `${npc.role} — press E to talk`,
       rect: clampRect(spec.npcZone),
     },
     {
-      id: `${building.id}-exit`,
+      id: `${id}-exit`,
       kind: "exit",
       name: "Back to the street",
       hint: "press E to leave",
       rect: clampRect(spec.exitZone),
     },
+    ...itemHotspots(id, room.items, spec.itemRects ?? []),
+    ...actionHotspots(id, room.actions, spec.actionRects ?? []),
   ];
-  (spec.items ?? []).slice(0, 2).forEach((it, i) =>
-    hotspots.push({
-      id: `${building.id}-item${i}`,
-      kind: "item",
-      name: it.name,
-      hint: it.hint,
-      rect: clampRect(it.rect),
-      itemName: it.name,
-    })
-  );
-  (spec.actions ?? []).slice(0, 2).forEach((a, i) =>
-    hotspots.push({
-      id: `${building.id}-act${i}`,
-      kind: "action",
-      name: a.name,
-      hint: a.hint,
-      rect: clampRect(a.rect),
-      outcome: a.outcome,
-      grantsItem: a.grantsItem?.trim() || undefined,
-      leadsOutside: Boolean(a.leadsOutside),
-    })
-  );
 
   return {
-    id: building.id,
+    id,
     kind: "interior",
-    title: spec.title,
+    title: room.name,
     ambient: spec.ambient,
     image: toDataUrl(img.b64, img.mimeType),
     hotspots,
-    npc: spec.npc,
+    npc: {
+      name: npc.name,
+      role: npc.role,
+      persona: npc.persona,
+      opening: npc.opening,
+      quirk: npc.quirk,
+      voice: npc.voice,
+    },
     parentId: "street",
-    clueIndex: building.clueIndex,
+    clueIndex: roomIndex,
   };
 }
 
@@ -539,42 +704,54 @@ const dialogueSchema = {
       description:
         "True ONLY on the turn where you actually reveal the guarded clue to the player.",
     },
+    offense: {
+      type: Type.STRING,
+      enum: ["none", "minor", "grave"],
+      description:
+        "Referee the player's LAST line against this character. 'grave' ONLY if it trips the character's TURNS HOSTILE IF wire from the bible. 'minor' for rudeness, threats, or careless pressure that stings. Otherwise 'none' — most lines are 'none'.",
+    },
     done: {
       type: Type.BOOLEAN,
       description: "True when the NPC closes the conversation.",
     },
   },
-  required: ["line", "mood", "options", "clueRevealed", "done"],
+  required: ["line", "mood", "options", "clueRevealed", "offense", "done"],
 };
 
 export async function generateDialogue(
-  premise: Premise,
-  npc: NpcDef,
-  sceneTitle: string,
-  questHook: string,
+  bible: GameBible,
+  npcIndex: number,
   history: DialogueTurn[],
   playerLine: string | null,
   storyCtx?: {
-    clue: string | null;
     clueFound: boolean;
     exchanges: number;
     inventory?: string[];
+    /** Current danger-meter value 0..100. */
+    heat?: number;
   }
 ): Promise<DialogueResponse> {
+  const npc = bible.npcs[npcIndex];
+  const room = bible.rooms[npcIndex];
+  if (!npc || !room) throw new Error(`No NPC ${npcIndex} in the bible.`);
+  const clue = bible.story.clues[npcIndex];
+
   const lines: string[] = [
-    `UNIVERSE: ${premise.title} — ${premise.setup}`,
-    `SCENE: ${sceneTitle}`,
-    `QUEST THREAD: ${questHook}`,
-    `YOU ARE: ${npc.name}, ${npc.role}. ${npc.persona}`,
+    bibleBrief(bible),
+    "",
+    `YOU ARE NPC ${npcIndex + 1}: ${npc.name}, in ${room.name}. Play them exactly as the bible defines: persona, wants, fears, quirk.`,
+    `YOUR VERBAL QUIRK (use it): ${npc.quirk}`,
   ];
-  if (npc.quirk) lines.push(`YOUR VERBAL QUIRK (use it): ${npc.quirk}`);
   if (storyCtx?.inventory?.length) {
     lines.push(
       `THE PLAYER VISIBLY CARRIES: ${storyCtx.inventory.join(", ")} — react to these when it makes sense.`
     );
   }
-  if (storyCtx?.clue && !storyCtx.clueFound) {
-    lines.push(`THE CLUE YOU GUARD: ${storyCtx.clue}`);
+  const heat = storyCtx?.heat ?? 0;
+  if (heat >= 60) {
+    lines.push(
+      `The ${bible.heatLabel} meter is at ${heat}/100 — word of the player's blundering has reached you. Open wary; make them feel it.`
+    );
   }
   lines.push(
     "",
@@ -584,15 +761,19 @@ export async function generateDialogue(
   if (playerLine) lines.push(`Player: ${playerLine}`);
 
   const exchanges = storyCtx?.exchanges ?? history.filter((t) => t.speaker === "player").length;
-  lines.push("", "Reply in character, brief and specific.");
-  if (storyCtx?.clue && !storyCtx.clueFound) {
+  lines.push(
+    "",
+    "Reply in character, brief and specific.",
+    `REFEREE the player's last line: if it trips your TURNS HOSTILE IF wire (${npc.turnsHostileIf}), set offense='grave', refuse the clue, and slam the conversation shut (done=true, options=[]). Rudeness or careless pressure that merely stings is offense='minor'. Otherwise offense='none'.`
+  );
+  if (!storyCtx?.clueFound) {
     if (exchanges >= 2) {
       lines.push(
-        "The player has earned it — reveal your guarded clue THIS turn, woven naturally into your line, and set clueRevealed=true."
+        "Unless the offense is grave: the player has earned it — reveal your guarded clue THIS turn, woven naturally into your line, and set clueRevealed=true."
       );
     } else {
       lines.push(
-        "Move fast: you may tease, but reveal the guarded clue by the second exchange at the latest. When you reveal it, set clueRevealed=true."
+        "Move fast: you may tease, but reveal the guarded clue by the second exchange at the latest (never on a grave offense). When you reveal it, set clueRevealed=true."
       );
     }
   }
@@ -607,7 +788,7 @@ export async function generateDialogue(
     contents: lines.join("\n"),
     config: {
       systemInstruction:
-        "You are an NPC in a cinematic adventure game with ONE convergent mystery. You are a PERSON, not an information kiosk: you have fears, debts, grudges, and a stake in this story. Rules: (1) every line raises tension or reveals character — never neutral exposition; (2) react to WHAT the player says and HOW; (3) pepper speech naturally with Hindi/regional words matching the world's region (arre, beta, sahib, theek hai, bas) while staying clear in English; (4) use your verbal quirk; (5) conversations are short — a few charged exchanges, never small talk. These lines are voiced aloud, so write for the ear. Never break character, never mention being an AI. Return ONLY the structured object.",
+        "You are an NPC in a cinematic adventure game with ONE convergent mystery, AND the referee of the game bible you are given. You are a PERSON, not an information kiosk: you have fears, debts, grudges, and a stake in this story. Rules: (1) every line raises tension or reveals character — never neutral exposition; (2) react to WHAT the player says and HOW; (3) pepper speech naturally with Hindi/regional words matching the world's region (arre, beta, sahib, theek hai, bas) while staying clear in English; (4) use your verbal quirk; (5) conversations are short — a few charged exchanges, never small talk; (6) NEVER reveal or hint at the bible's hidden secret, and never speak the other NPCs' clues — only your own; (7) judge offenses honestly: the player must be able to get this wrong. These lines are voiced aloud, so write for the ear. Never break character, never mention being an AI. Return ONLY the structured object.",
       responseMimeType: "application/json",
       responseSchema: dialogueSchema,
       temperature: 1.0,
@@ -615,6 +796,12 @@ export async function generateDialogue(
   });
   if (!res.text) throw new Error("Empty dialogue from text model.");
   const out = JSON.parse(res.text) as DialogueResponse;
+  if (out.offense !== "minor" && out.offense !== "grave") out.offense = "none";
+  // A grave offense always slams the conversation shut and keeps the clue.
+  if (out.offense === "grave") {
+    out.done = true;
+    out.clueRevealed = false;
+  }
   if (out.done) {
     out.options = [];
   } else {
@@ -635,33 +822,38 @@ const finaleSchema = {
     resolution: {
       type: Type.STRING,
       description:
-        "The reveal, max 70 words, second person: how the three clues fit together and the secret they expose. A satisfying close.",
+        "The closing narration, max 70 words, second person. Victory: how the three clues fit together and the secret they expose. Defeat: how the player's carelessness caught up with them — the fail state's consequence made vivid, the secret left buried.",
     },
     imagePrompt: {
       type: Type.STRING,
       description:
-        "Prompt for the closing frame: the moment of revelation, 2D top-down retro RPG view, consistent with the world. No text in image.",
+        "Prompt for the closing frame: the moment of revelation (or downfall), 2D top-down retro RPG view, consistent with the world. No text in image.",
     },
   },
   required: ["title", "resolution", "imagePrompt"],
 };
 
+export type FinaleOutcome = "victory" | "defeat";
+
 export async function generateFinale(
-  premise: Premise,
-  story: StoryArc
-): Promise<{ title: string; resolution: string; image: string }> {
+  bible: GameBible,
+  outcome: FinaleOutcome = "victory",
+  reason?: string
+): Promise<{ title: string; resolution: string; image: string; outcome: FinaleOutcome }> {
   const res = await ai().models.generateContent({
     model: TEXT_MODEL,
     contents: [
-      `UNIVERSE: ${premise.title} — ${premise.setup}`,
-      `GOAL: ${story.goal}`,
-      `THE SECRET: ${story.secret}`,
-      `CLUES THE PLAYER GATHERED: ${story.clues.join(" · ")}`,
-      "Write the finale: the moment the three clues converge and the secret comes out.",
+      bibleBrief(bible),
+      "",
+      outcome === "victory"
+        ? "Write the VICTORY finale: the moment the three clues converge and the hidden secret finally comes out, plainly stated."
+        : `Write the DEFEAT finale: the run has ended because ${
+            reason || `the ${bible.heatLabel} meter reached 100`
+          }. Show the consequence landing; the secret stays buried — do NOT reveal it.`,
     ].join("\n"),
     config: {
       systemInstruction:
-        "You are the narrative director closing an adventure game's mystery. Land the reveal cleanly. Return ONLY the structured object.",
+        "You are the narrative director closing an adventure game. Land the ending cleanly, faithful to the game bible. Return ONLY the structured object.",
       responseMimeType: "application/json",
       responseSchema: finaleSchema,
       temperature: 1.0,
@@ -675,13 +867,14 @@ export async function generateFinale(
   };
   const img = await generateImage(
     `${spec.imagePrompt} ${PIXEL_STYLE}`,
-    premise.styleBible,
+    bible.styleBible,
     null
   );
   return {
     title: spec.title,
     resolution: spec.resolution,
     image: toDataUrl(img.b64, img.mimeType),
+    outcome,
   };
 }
 

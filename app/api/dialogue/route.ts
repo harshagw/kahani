@@ -1,23 +1,21 @@
 import { NextRequest, NextResponse } from "next/server";
 import { generateDialogue } from "@/lib/world-engine";
-import type { Premise } from "@/lib/types";
-import type { DialogueTurn, NpcDef } from "@/lib/universe";
+import type { DialogueTurn, GameBible } from "@/lib/universe";
 
 export const runtime = "nodejs";
 export const maxDuration = 30;
 
 type DialogueRequest = {
-  premise: Premise;
-  npc: NpcDef;
-  sceneTitle: string;
-  questHook: string;
+  bible: GameBible;
+  /** Which of the bible's 3 NPCs is speaking. */
+  npcIndex: number;
   history: DialogueTurn[];
   playerLine: string | null;
-  /** The clue this NPC guards + whether it's already found + exchange count. */
-  clue?: string | null;
   clueFound?: boolean;
   exchanges?: number;
   inventory?: string[];
+  /** Current danger-meter value 0..100. */
+  heat?: number;
 };
 
 export async function POST(req: NextRequest) {
@@ -27,24 +25,25 @@ export async function POST(req: NextRequest) {
   } catch {
     return NextResponse.json({ error: "Invalid JSON body." }, { status: 400 });
   }
-  if (!body.premise?.id || !body.npc?.name) {
-    return NextResponse.json({ error: "Missing premise or npc." }, { status: 400 });
+  if (!body.bible?.npcs?.length || typeof body.npcIndex !== "number") {
+    return NextResponse.json(
+      { error: "Missing bible or npcIndex." },
+      { status: 400 }
+    );
   }
   try {
     const reply = await generateDialogue(
-      body.premise,
-      body.npc,
-      body.sceneTitle ?? "",
-      body.questHook ?? "",
+      body.bible,
+      body.npcIndex,
       body.history ?? [],
       body.playerLine ?? null,
       {
-        clue: body.clue ?? null,
         clueFound: Boolean(body.clueFound),
         exchanges:
           body.exchanges ??
           (body.history ?? []).filter((t) => t.speaker === "player").length,
         inventory: body.inventory ?? [],
+        heat: body.heat ?? 0,
       }
     );
     return NextResponse.json(reply);

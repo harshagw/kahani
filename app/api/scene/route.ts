@@ -1,22 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { generateInteriorScene, generateStreetScene } from "@/lib/world-engine";
-import type { Premise } from "@/lib/types";
-import type { StoryArc } from "@/lib/universe";
+import type { GameBible } from "@/lib/universe";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
 
 type SceneRequest = {
-  premise: Premise;
-  story: StoryArc;
-  /** Omitted for the opening street; set to enter a building. */
-  building?: {
-    id: string;
-    name: string;
-    interiorPrompt: string;
-    clueIndex?: number;
-  };
-  questHook?: string;
+  bible: GameBible;
+  /** Omitted for the opening street; 0-2 to enter that room. */
+  roomIndex?: number;
 };
 
 export async function POST(req: NextRequest) {
@@ -26,25 +18,17 @@ export async function POST(req: NextRequest) {
   } catch {
     return NextResponse.json({ error: "Invalid JSON body." }, { status: 400 });
   }
-  if (!body.premise?.id || !body.story?.goal) {
-    return NextResponse.json(
-      { error: "Missing premise or story." },
-      { status: 400 }
-    );
+  if (!body.bible?.story?.goal || !Array.isArray(body.bible.rooms)) {
+    return NextResponse.json({ error: "Missing game bible." }, { status: 400 });
   }
 
   try {
-    if (body.building) {
-      const scene = await generateInteriorScene(
-        body.premise,
-        body.building,
-        body.questHook ?? "",
-        body.story
-      );
+    if (typeof body.roomIndex === "number") {
+      const scene = await generateInteriorScene(body.bible, body.roomIndex);
       return NextResponse.json({ scene });
     }
-    const scene = await generateStreetScene(body.premise, body.story);
-    return NextResponse.json({ scene, questHook: scene.questHook });
+    const scene = await generateStreetScene(body.bible);
+    return NextResponse.json({ scene });
   } catch (err) {
     const message =
       err instanceof Error ? err.message : "Failed to generate the scene.";
