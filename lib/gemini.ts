@@ -360,7 +360,7 @@ export async function generateImage(
   const fullPrompt = [
     imagePrompt,
     `Art direction: ${styleBible}`,
-    "Cinematic 16:9 composition, 1K, highly detailed, no text, no watermark, no logos.",
+    "16:9 composition, 1K, no text, no watermark, no logos.",
     prevImage
       ? "Maintain the same recurring characters, wardrobe, and overall art style as the reference image for visual continuity."
       : "",

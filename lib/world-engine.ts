@@ -11,9 +11,9 @@ import type {
   StoryArc,
 } from "./universe";
 
-/** Appended to every scene render so the world reads as one cozy game town. */
+/** Appended to every scene render so the world reads as one retro RPG overworld. */
 const ISO_STYLE =
-  "Rendered as a cute miniature isometric video-game town diorama (Pokemon / HD-2D style): high-angle top-down 3/4 camera at ~60 degrees elevation, small charming buildings with large clearly-readable doorways, wide open walkable ground filling most of the frame, crisp clean game-art with soft shadows, no depth-of-field blur.";
+  "Rendered as a 16-bit retro RPG overworld screen (classic Pokemon Game Boy Advance style): near-top-down 3/4 view, chunky clean pixel-art, tile-based ground (paths, grass, paving) filling most of the frame, small buildings showing their front face and roof with ONE large centered door each, bright saturated flat colors, crisp hard pixel edges, no painterly brushwork, no gradients, no blur.";
 
 const TEXT_MODEL = process.env.TEXT_MODEL || "gemini-2.5-flash";
 const IMAGE_MODEL = process.env.IMAGE_MODEL || "gemini-2.5-flash-image";
@@ -51,7 +51,7 @@ const universeSchema = {
     styleBible: {
       type: Type.STRING,
       description:
-        "One sentence of concrete art direction that every frame of this world will share: rendering style, lighting, palette, mood. e.g. 'Painterly dusk light, warm ochre palette, soft game-art rendering.'",
+        "One sentence of PALETTE and MOOD only — the rendering style is always 16-bit pixel-art and is fixed elsewhere. Time of day, color palette, weather, atmosphere. e.g. 'Warm dusk palette, monsoon-wet stone, lantern glows.'",
     },
     story: {
       type: Type.OBJECT,
@@ -149,7 +149,7 @@ async function analyzeWalkability(
       contents: [
         { inlineData: { data: b64, mimeType } },
         {
-          text: `This is an isometric frame from an adventure game. The player character walks on the visible ground plane (streets, floors, boardwalks). Map its walkability. ${keepClearNote} Return ONLY the structured object.`,
+          text: `This is a top-down retro RPG overworld frame from an adventure game. The player character walks on the visible ground plane (paths, tiles, floors). Map its walkability. ${keepClearNote} Return ONLY the structured object.`,
         },
       ],
       config: {
@@ -221,7 +221,7 @@ const streetSchema = {
     imagePrompt: {
       type: Type.STRING,
       description:
-        "Rich prompt for a miniature isometric game-town shot of this street/exterior, seen from high above like a tiny diorama. MOST of the frame is open walkable ground with NO people; small buildings with big distinct doorways sit around the edges. Authentic, era- and place-faithful detail for this universe. No text in image.",
+        "Rich prompt for a retro RPG overworld screen of this street/exterior (classic Pokemon town style, near-top-down). MOST of the frame is open walkable tile ground with NO people; a few small buildings with one big distinct door each sit around the edges. Authentic, era- and place-faithful detail for this universe. No text in image.",
     },
     buildings: {
       type: Type.ARRAY,
@@ -253,7 +253,7 @@ const interiorSchema = {
     imagePrompt: {
       type: Type.STRING,
       description:
-        "Rich prompt for a miniature isometric game-room shot of this interior seen from high above, with ONE character (the NPC) visible. Most of the frame is open walkable floor; furniture hugs the walls. Authentic, era- and place-faithful detail for this universe. No text in image.",
+        "Rich prompt for a retro RPG interior room (classic Pokemon house-interior style, near-top-down), with ONE character (the NPC) visible. Most of the frame is open walkable tiled floor; furniture hugs the walls. Authentic, era- and place-faithful detail for this universe. No text in image.",
     },
     npc: {
       type: Type.OBJECT,
@@ -475,7 +475,7 @@ export async function generateSprite(
     referenceFrame
       ? "CRITICAL: render the character in EXACTLY the same art style, rendering technique, lighting direction, and color grade as the reference image, as if painted by the same artist for the same scene."
       : `Style: ${premise.styleBible}`,
-    "Single small chibi-proportioned game character (about 3 heads tall, cute but not childish), standing relaxed, facing right, full body head to feet, seen from a high-angle top-down 3/4 game camera to match the scene.",
+    "Single tiny 16-bit pixel-art RPG character sprite (classic Pokemon GBA proportions, about 2.5 heads tall), standing, facing right in side view, full body head to feet, chunky clean pixels.",
     "Isolated on a PURE WHITE background, no shadow, no ground, no text, no border. Character fills most of the frame height.",
   ].join(" ");
   const img = await generateImage(

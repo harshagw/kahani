@@ -166,6 +166,7 @@ export function GameCanvas({
       const ctx = canvas.getContext("2d");
       if (!ctx) return;
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.imageSmoothingEnabled = false; // crisp pixel-art upscale
 
       // --- Move (with obstacle collision; slide along the blocked axis) ---
       const p = playerRef.current;
