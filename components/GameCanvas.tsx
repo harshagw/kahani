@@ -13,23 +13,40 @@ export type PlayerState = {
   moving: boolean;
 };
 
+export type ExitDirection = "n" | "e" | "s" | "w";
+
 export function GameCanvas({
   scene,
   sprite,
   paused,
   onInteract,
+  spawn,
+  onExitEdge,
+  showVision,
 }: {
   scene: SceneData;
   sprite: HTMLCanvasElement | null;
   /** True while dialogue / overlays own the keyboard. */
   paused: boolean;
   onInteract: (hotspot: Hotspot) => void;
+  /** Where to place the player on scene change (e.g. entering from an edge). */
+  spawn?: { x: number; y: number } | null;
+  /** Fired once when the player walks off an open edge of an overworld screen. */
+  onExitEdge?: (dir: ExitDirection) => void;
+  /** Show the engine's traced frame instead of the clean one. */
+  showVision?: boolean;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const imgRef = useRef<HTMLImageElement | null>(null);
+  const visionRef = useRef<HTMLImageElement | null>(null);
+  const showVisionRef = useRef(Boolean(showVision));
+  showVisionRef.current = Boolean(showVision);
   const keysRef = useRef<Record<string, boolean>>({});
   const playerRef = useRef<PlayerState>({ x: 12, y: 70, dir: 1, moving: false });
   const nearRef = useRef<Hotspot | null>(null);
+  const exitFiredRef = useRef(false);
+  const onExitEdgeRef = useRef(onExitEdge);
+  onExitEdgeRef.current = onExitEdge;
   const pausedRef = useRef(paused);
   pausedRef.current = paused;
   const debugRef = useRef(false);
@@ -44,13 +61,21 @@ export function GameCanvas({
     img.onload = () => {
       imgRef.current = img;
     };
+    visionRef.current = null;
+    if (scene.annotated) {
+      const vis = new Image();
+      vis.src = scene.annotated;
+      vis.onload = () => {
+        visionRef.current = vis;
+      };
+    }
 
-    const startX = scene.kind === "interior" ? 50 : 14;
-    const startY = 72;
-    const x = startX;
-    const y = startY;
-    playerRef.current = { x, y, dir: 1, moving: false };
-  }, [scene.id, scene.image, scene.kind]);
+    const startX = spawn?.x ?? (scene.kind === "interior" ? 50 : 14);
+    const startY = spawn?.y ?? 72;
+    playerRef.current = { x: startX, y: startY, dir: 1, moving: false };
+    exitFiredRef.current = false;
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- spawn only applies at scene change
+  }, [scene.id, scene.image, scene.kind, scene.annotated]);
 
   // Keyboard
   useEffect(() => {
@@ -123,6 +148,24 @@ export function GameCanvas({
 
         p.x = Math.max(2, Math.min(98, p.x + vx * SPEED_X * dt));
         p.y = Math.max(4, Math.min(96, p.y + vy * SPEED_Y * dt));
+
+        // --- Walk off an open edge → the world continues one screen over ---
+        const edges = scene.edges;
+        if (edges && onExitEdgeRef.current && !exitFiredRef.current) {
+          let dir: ExitDirection | null = null;
+          if (vx > 0 && p.x >= 97.5 && edges.e) dir = "e";
+          else if (vx < 0 && p.x <= 2.5 && edges.w) dir = "w";
+          else if (vy < 0 && p.y <= 4.5 && edges.n) dir = "n";
+          else if (vy > 0 && p.y >= 95.5 && edges.s) dir = "s";
+          if (dir) {
+            exitFiredRef.current = true;
+            onExitEdgeRef.current(dir);
+          }
+        }
+        // Stepping back from the edge re-arms the exit (covers failed loads).
+        if (exitFiredRef.current && p.x > 8 && p.x < 92 && p.y > 10 && p.y < 90) {
+          exitFiredRef.current = false;
+        }
       } else {
         p.moving = false;
       }
@@ -147,7 +190,10 @@ export function GameCanvas({
 
       // --- Draw backdrop (cover fit; game coords are % of the image) ---
       ctx.clearRect(0, 0, cw, ch);
-      const img = imgRef.current;
+      const img =
+        showVisionRef.current && visionRef.current
+          ? visionRef.current
+          : imgRef.current;
       let ox = 0;
       let oy = 0;
       let dw = cw;

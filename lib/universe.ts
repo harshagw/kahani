@@ -142,6 +142,9 @@ export type GameBible = {
   npcs: NpcPlan[];
 };
 
+/** Which sides of an overworld screen the player can walk off (true = open). */
+export type EdgeOpenness = { n: boolean; e: boolean; s: boolean; w: boolean };
+
 export type SceneData = {
   id: string;
   kind: "street" | "interior";
@@ -152,10 +155,16 @@ export type SceneData = {
   image: string;
   hotspots: Hotspot[];
   npc?: NpcDef;
-  /** Interior scenes remember the street they came from. */
+  /** Interior scenes remember the screen they came from. */
   parentId?: string;
   /** For interiors: which story clue this scene's NPC guards. */
   clueIndex?: number;
+  /** Overworld screens: grid coordinate in the infinite world. */
+  coord?: { x: number; y: number };
+  /** Overworld screens: which edges continue into a neighboring screen. */
+  edges?: EdgeOpenness;
+  /** The engine's eyes: the frame with model-traced borders (data URL). */
+  annotated?: string;
 };
 
 export type DialogueTurn = {

@@ -1,9 +1,10 @@
 import { Type } from "@google/genai";
-import { ai, generateImage, toDataUrl } from "./gemini";
+import { ai, generateImage, toDataUrl, type ImageResult } from "./gemini";
 import type { Premise } from "./types";
 import type {
   DialogueResponse,
   DialogueTurn,
+  EdgeOpenness,
   GameBible,
   Hotspot,
   PlannedAction,
@@ -389,10 +390,299 @@ export function bibleBrief(b: GameBible): string {
 }
 
 /* ------------------------------------------------------------------ */
-/* Scene generation — layout passes over the bible's authored content  */
+/* The infinite loop: paint a frame → trace borders over it → read     */
+/* both images into structured hotspots → repeat one screen over.      */
 /* ------------------------------------------------------------------ */
 
-/** Shared hotspot builders: content comes from the bible, rects from layout. */
+export type Direction = "n" | "e" | "s" | "w";
+
+const DIR_META: Record<Direction, { label: string; opposite: Direction }> = {
+  n: { label: "NORTH", opposite: "s" },
+  e: { label: "EAST", opposite: "w" },
+  s: { label: "SOUTH", opposite: "n" },
+  w: { label: "WEST", opposite: "e" },
+};
+
+/**
+ * Pass 2 of the loop: hand the painted frame back to the image model and have
+ * it trace bright magenta borders around everything it can identify. The
+ * traced frame is the engine's "eyes" — pass 3 reads both frames together.
+ */
+async function traceFrame(b64: string, mimeType: string): Promise<ImageResult> {
+  const prompt =
+    "Reproduce this EXACT image unchanged, then draw crisp solid 4-pixel MAGENTA (#FF00FF) outlines around every distinct thing in it: each building or hut, each boat, cart, well, shrine, statue, bridge, large tree or tree cluster, each water body, and each path or clearing. Every outline must tightly hug the thing it marks. Do NOT recolor, move, add, or remove anything else — the only change is the magenta borders.";
+  try {
+    const res = await ai().models.generateContent({
+      model: IMAGE_MODEL,
+      contents: [
+        { inlineData: { data: b64, mimeType } },
+        { text: prompt },
+      ],
+      config: { responseModalities: ["Image"] },
+    });
+    const parts = res.candidates?.[0]?.content?.parts ?? [];
+    for (const part of parts) {
+      if (part.inlineData?.data) {
+        return {
+          b64: part.inlineData.data,
+          mimeType: part.inlineData.mimeType || "image/png",
+          fallback: false,
+        };
+      }
+    }
+    throw new Error("No traced image returned.");
+  } catch (err) {
+    console.error("[traceFrame] falling back to untraced frame:", err);
+    return { b64, mimeType, fallback: true };
+  }
+}
+
+const screenVisionSchema = {
+  type: Type.OBJECT,
+  properties: {
+    title: { type: Type.STRING, description: "Name of this area, 2-4 words." },
+    ambient: {
+      type: Type.STRING,
+      description: "One atmospheric line shown on arrival, max 14 words.",
+    },
+    edges: {
+      type: Type.OBJECT,
+      description:
+        "For each side of the frame: true if the terrain visibly continues (path, grass, open ground) so the player can walk off that side into the next screen; false if it is sealed by water, cliffs, or dense forest.",
+      properties: {
+        n: { type: Type.BOOLEAN },
+        e: { type: Type.BOOLEAN },
+        s: { type: Type.BOOLEAN },
+        w: { type: Type.BOOLEAN },
+      },
+      required: ["n", "e", "s", "w"],
+    },
+    buildings: {
+      type: Type.ARRAY,
+      description:
+        "Every enterable-looking building visible in the frame, each with the box where its doorway area sits. If one matches an UNPLACED bible room you were told about, set roomIndex to that room's number (0-2); otherwise roomIndex -1. At most ONE building per screen may claim a roomIndex.",
+      items: {
+        type: Type.OBJECT,
+        properties: {
+          name: { type: Type.STRING, description: "What this building is, 2-4 words." },
+          hint: { type: Type.STRING, description: "Near-door hint, max 8 words." },
+          roomIndex: {
+            type: Type.INTEGER,
+            description: "0-2 when this IS that bible room, else -1.",
+          },
+          rect: rectSchema,
+        },
+        required: ["name", "hint", "roomIndex", "rect"],
+      },
+    },
+    items: {
+      type: Type.ARRAY,
+      description:
+        "0-2 small collectible objects actually VISIBLE in the frame (pots, tools, papers, offerings), story-flavored for this world, each boxed where it sits.",
+      items: {
+        type: Type.OBJECT,
+        properties: {
+          name: { type: Type.STRING },
+          hint: { type: Type.STRING, description: "Near hint, max 8 words." },
+          rect: rectSchema,
+        },
+        required: ["name", "hint", "rect"],
+      },
+    },
+    actions: {
+      type: Type.ARRAY,
+      description:
+        "1-2 environmental interactions using props actually VISIBLE in the frame (ring, search, peek, light, draw water…). Give suspicion 15-30 to at most one genuinely rash action, 0 to the rest.",
+      items: {
+        type: Type.OBJECT,
+        properties: {
+          name: { type: Type.STRING, description: "Imperative, 2-5 words." },
+          hint: { type: Type.STRING, description: "Near hint, max 8 words." },
+          outcome: { type: Type.STRING, description: "What happens, max 20 words, vivid." },
+          grantsItem: { type: Type.STRING, description: "Item gained, or empty string." },
+          risk: {
+            type: Type.STRING,
+            description: "When suspicion > 0: what goes wrong, max 15 words. Else empty.",
+          },
+          suspicion: {
+            type: Type.INTEGER,
+            description: "Heat drawn: 0 harmless, 15 risky, 30 reckless.",
+          },
+          rect: rectSchema,
+        },
+        required: ["name", "hint", "outcome", "grantsItem", "risk", "suspicion", "rect"],
+      },
+    },
+  },
+  required: ["title", "ambient", "edges", "buildings", "items", "actions"],
+};
+
+/**
+ * One turn of the infinite loop: paint the screen at (x,y), trace it, then
+ * read both frames into hotspots + open edges. Neighboring screens use the
+ * previous frame as a reference so the terrain continues seamlessly.
+ */
+export async function generateScreen(
+  bible: GameBible,
+  x: number,
+  y: number,
+  /** Direction the player walked to get here (from the previous screen). */
+  arriveFrom: Direction | null,
+  /** Previous screen's frame (base64, no data-url prefix) for continuity. */
+  prevImage: string | null,
+  /** Bible rooms (0-2) not yet placed anywhere in the world. */
+  unplacedRooms: number[]
+): Promise<SceneData> {
+  const id = `s${x}_${y}`;
+  const isOrigin = x === 0 && y === 0;
+  // Guarantee story progress: the next unplaced room is painted INTO the
+  // frame, so the vision pass can anchor it to a real building.
+  const roomToPlace = unplacedRooms.length > 0 ? unplacedRooms[0] : null;
+  const roomLine =
+    roomToPlace !== null
+      ? `Prominently include a building that is clearly "${bible.rooms[roomToPlace].name}" (${bible.rooms[roomToPlace].hint}), its entrance door visible.`
+      : "Include at most one or two modest flavor buildings, or none.";
+
+  // --- Pass 1: paint the frame ---
+  const imagePrompt = [
+    isOrigin
+      ? `${bible.street.name}: ${bible.street.description}`
+      : `An adjoining stretch of the same world, immediately ${
+          arriveFrom ? DIR_META[arriveFrom].label : "beyond"
+        } of the reference frame. The terrain along the shared edge must continue seamlessly from the reference image. Introduce one or two fresh landmarks true to the setting.`,
+    `World: ${bible.setting}`,
+    roomLine,
+    "MOST of the frame is open walkable tile ground with NO people. Small props (pots, carts, wells, boats) visible from above.",
+  ].join(" ");
+  const frame = await generateImage(
+    `${imagePrompt} ${PIXEL_STYLE}`,
+    bible.styleBible,
+    prevImage
+  );
+
+  // --- Pass 2: the model traces borders over its own painting ---
+  const traced = await traceFrame(frame.b64, frame.mimeType);
+
+  // --- Pass 3: read both frames into structured hotspots ---
+  const res = await ai().models.generateContent({
+    model: TEXT_MODEL,
+    contents: [
+      { inlineData: { data: frame.b64, mimeType: frame.mimeType } },
+      { inlineData: { data: traced.b64, mimeType: traced.mimeType } },
+      {
+        text: [
+          bibleBrief(bible),
+          "",
+          "IMAGE 1 is a screen of this world. IMAGE 2 is the same frame with magenta borders traced around every distinct thing.",
+          `UNPLACED BIBLE ROOMS: ${
+            unplacedRooms.length
+              ? unplacedRooms
+                  .map((i) => `room ${i} = "${bible.rooms[i].name}"`)
+                  .join(", ")
+              : "(none — all rooms already exist elsewhere in the world)"
+          }`,
+          roomToPlace !== null
+            ? `The frame was painted to contain "${bible.rooms[roomToPlace].name}" — find it and give that building roomIndex ${roomToPlace}.`
+            : "",
+          "TASK: catalog what is actually IN these frames. Use the magenta borders in IMAGE 2 to locate each thing precisely; every rect must tightly match the bordered area in percent coordinates (0-100 of frame width/height). Judge each frame edge: open ground continuing = true, water/cliff/dense forest = false. Invent nothing that is not visible.",
+        ]
+          .filter(Boolean)
+          .join("\n"),
+      },
+    ],
+    config: {
+      systemInstruction:
+        "You are the vision system of a game engine looking at frames of its own generated world. You turn pictures into precise interactive data, faithful to the game bible's tone. Return ONLY the structured object.",
+      responseMimeType: "application/json",
+      responseSchema: screenVisionSchema,
+      temperature: 0.6,
+    },
+  });
+  if (!res.text) throw new Error("Empty screen vision from text model.");
+  const spec = JSON.parse(res.text) as {
+    title: string;
+    ambient: string;
+    edges: EdgeOpenness;
+    buildings: { name: string; hint: string; roomIndex: number; rect: Rect }[];
+    items: { name: string; hint: string; rect: Rect }[];
+    actions: {
+      name: string;
+      hint: string;
+      outcome: string;
+      grantsItem: string;
+      risk: string;
+      suspicion: number;
+      rect: Rect;
+    }[];
+  };
+
+  const hotspots: Hotspot[] = [];
+  let roomClaimed = false;
+  (spec.buildings ?? []).slice(0, 4).forEach((b, i) => {
+    const wantsRoom =
+      b.roomIndex >= 0 &&
+      b.roomIndex <= 2 &&
+      unplacedRooms.includes(b.roomIndex) &&
+      !roomClaimed;
+    if (wantsRoom) roomClaimed = true;
+    hotspots.push({
+      id: `${id}-b${i}`,
+      kind: "building",
+      name: wantsRoom ? bible.rooms[b.roomIndex].name : b.name,
+      hint: wantsRoom ? bible.rooms[b.roomIndex].hint : b.hint,
+      rect: clampRect(b.rect),
+      clueIndex: wantsRoom ? b.roomIndex : undefined,
+    });
+  });
+  (spec.items ?? []).slice(0, 2).forEach((it, i) =>
+    hotspots.push({
+      id: `${id}-item${i}`,
+      kind: "item",
+      name: it.name,
+      hint: it.hint,
+      rect: clampRect(it.rect),
+      itemName: it.name,
+    })
+  );
+  (spec.actions ?? []).slice(0, 2).forEach((a, i) =>
+    hotspots.push({
+      id: `${id}-act${i}`,
+      kind: "action",
+      name: a.name,
+      hint: a.hint,
+      rect: clampRect(a.rect),
+      outcome: a.outcome,
+      grantsItem: a.grantsItem?.trim() || undefined,
+      suspicion: clampSuspicion(a.suspicion) || undefined,
+      risk: a.risk?.trim() || undefined,
+    })
+  );
+
+  const edges: EdgeOpenness = {
+    n: Boolean(spec.edges?.n),
+    e: Boolean(spec.edges?.e),
+    s: Boolean(spec.edges?.s),
+    w: Boolean(spec.edges?.w),
+  };
+  // Never strand the player: the way back stays open (walking east in means
+  // the WEST edge leads back), and at least one edge must lead onward.
+  if (arriveFrom) edges[DIR_META[arriveFrom].opposite] = true;
+  if (!edges.n && !edges.e && !edges.s && !edges.w) edges.e = true;
+
+  return {
+    id,
+    kind: "street",
+    title: spec.title,
+    ambient: spec.ambient,
+    image: toDataUrl(frame.b64, frame.mimeType),
+    annotated: traced.fallback ? undefined : toDataUrl(traced.b64, traced.mimeType),
+    hotspots,
+    coord: { x, y },
+    edges,
+  };
+}
+
+/** Interior hotspot builders: content comes from the bible, rects from layout. */
 function itemHotspots(
   prefix: string,
   planned: PlannedItem[],
@@ -425,40 +715,6 @@ function actionHotspots(
     risk: a.risk?.trim() || undefined,
   }));
 }
-
-const streetLayoutSchema = {
-  type: Type.OBJECT,
-  properties: {
-    ambient: {
-      type: Type.STRING,
-      description: "One atmospheric line shown on arrival, max 14 words.",
-    },
-    imagePrompt: {
-      type: Type.STRING,
-      description:
-        "Rich prompt for a retro RPG overworld screen of THIS street as described in the bible (classic Pokemon town style, near-top-down). MOST of the frame is open walkable tile ground with NO people; the 3 named buildings with one big distinct door each sit around the edges; the listed items and action props are visible in the open. Authentic, era- and place-faithful detail. No text in image.",
-    },
-    buildingRects: {
-      type: Type.ARRAY,
-      items: rectSchema,
-      description:
-        "Exactly 3 boxes, in the SAME ORDER as the rooms listed in the bible, each positioned where that building's doorway appears in your image.",
-    },
-    itemRects: {
-      type: Type.ARRAY,
-      items: rectSchema,
-      description:
-        "One box per listed street item, same order, in the OPEN walkable area where it appears in your image.",
-    },
-    actionRects: {
-      type: Type.ARRAY,
-      items: rectSchema,
-      description:
-        "One box per listed street action, same order, at the prop it uses in your image.",
-    },
-  },
-  required: ["ambient", "imagePrompt", "buildingRects", "itemRects", "actionRects"],
-};
 
 const interiorLayoutSchema = {
   type: Type.OBJECT,
@@ -493,72 +749,11 @@ const interiorLayoutSchema = {
   required: ["ambient", "imagePrompt", "npcZone", "exitZone", "itemRects", "actionRects"],
 };
 
-export async function generateStreetScene(bible: GameBible): Promise<SceneData> {
-  const res = await ai().models.generateContent({
-    model: TEXT_MODEL,
-    contents: [
-      bibleBrief(bible),
-      "",
-      "TASK: lay out the opening street exactly as the bible describes it — you are placing, not inventing.",
-      `Buildings to place, in order: ${bible.rooms
-        .map((r, i) => `${i + 1}. ${r.name}`)
-        .join("  ")}`,
-      `Street items to place, in order: ${bible.street.items
-        .map((it, i) => `${i + 1}. ${it.name}`)
-        .join("  ") || "(none)"}`,
-      `Street actions to place, in order: ${bible.street.actions
-        .map((a, i) => `${i + 1}. ${a.name}`)
-        .join("  ") || "(none)"}`,
-      "Write the imagePrompt for this exact street and return the boxes where everything sits in that image.",
-    ].join("\n"),
-    config: {
-      systemInstruction:
-        "You are the level-layout artist of an explorable adventure game. The game bible has already authored all content; your job is composition: paint the described street and return accurate percent-coordinate boxes for the listed buildings, items, and actions. Doorways sit at ground level (y of the box bottom around 55-75). Return ONLY the structured object.",
-      responseMimeType: "application/json",
-      responseSchema: streetLayoutSchema,
-      temperature: 1.0,
-    },
-  });
-  if (!res.text) throw new Error("Empty street layout from text model.");
-  const spec = JSON.parse(res.text) as {
-    ambient: string;
-    imagePrompt: string;
-    buildingRects: Rect[];
-    itemRects: Rect[];
-    actionRects: Rect[];
-  };
-
-  const img = await generateImage(
-    `${spec.imagePrompt} ${PIXEL_STYLE}`,
-    bible.styleBible,
-    null
-  );
-
-  const hotspots: Hotspot[] = bible.rooms.map((room, i) => ({
-    id: `b${i}`,
-    kind: "building" as const,
-    name: room.name,
-    hint: room.hint,
-    rect: clampRect(spec.buildingRects[i] ?? { x: 10 + i * 30, y: 30, w: 18, h: 22 }),
-    interiorPrompt: room.description,
-    clueIndex: i,
-  }));
-  hotspots.push(...itemHotspots("street", bible.street.items, spec.itemRects ?? []));
-  hotspots.push(...actionHotspots("street", bible.street.actions, spec.actionRects ?? []));
-
-  return {
-    id: "street",
-    kind: "street",
-    title: bible.street.name,
-    ambient: spec.ambient,
-    image: toDataUrl(img.b64, img.mimeType),
-    hotspots,
-  };
-}
-
 export async function generateInteriorScene(
   bible: GameBible,
-  roomIndex: number
+  roomIndex: number,
+  /** The overworld screen this room's building stands on. */
+  parentId = "s0_0"
 ): Promise<SceneData> {
   const room = bible.rooms[roomIndex];
   const npc = bible.npcs[roomIndex];
@@ -637,7 +832,7 @@ export async function generateInteriorScene(
       quirk: npc.quirk,
       voice: npc.voice,
     },
-    parentId: "street",
+    parentId,
     clueIndex: roomIndex,
   };
 }

@@ -2,7 +2,17 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { DoorOpen, Flame, Package, Search, Volume2, VolumeX, Zap } from "lucide-react";
+import {
+  Compass,
+  DoorOpen,
+  Eye,
+  Flame,
+  Package,
+  Search,
+  Volume2,
+  VolumeX,
+  Zap,
+} from "lucide-react";
 import type { Premise } from "@/lib/types";
 import type {
   DialogueResponse,
@@ -12,7 +22,7 @@ import type {
   SceneData,
 } from "@/lib/universe";
 import { Landing } from "./Landing";
-import { GameCanvas } from "./GameCanvas";
+import { GameCanvas, type ExitDirection } from "./GameCanvas";
 import { DialogueBox } from "./DialogueBox";
 
 type Phase = "select" | "booting" | "playing";
@@ -26,6 +36,19 @@ type FinaleData = {
 
 /** Heat drawn by a dialogue misstep, judged by the NPC referee. */
 const OFFENSE_HEAT = { none: 0, minor: 12, grave: 35 } as const;
+
+/** Walking off an edge: neighbor delta, spawn point on arrival, word shown. */
+const EDGE_META: Record<
+  ExitDirection,
+  { dx: number; dy: number; spawn: { x: number; y: number }; word: string }
+> = {
+  n: { dx: 0, dy: -1, spawn: { x: 50, y: 92 }, word: "north" },
+  e: { dx: 1, dy: 0, spawn: { x: 5, y: 70 }, word: "east" },
+  s: { dx: 0, dy: 1, spawn: { x: 50, y: 8 }, word: "south" },
+  w: { dx: -1, dy: 0, spawn: { x: 95, y: 70 }, word: "west" },
+};
+
+const ORIGIN_ID = "s0_0";
 
 const OPENING_OPTIONS = [
   "Who are you, really?",
@@ -109,6 +132,13 @@ export function World() {
   const [sprite, setSprite] = useState<HTMLCanvasElement | null>(null);
   const [bootStatus, setBootStatus] = useState("Dreaming up the world…");
   const [entering, setEntering] = useState<string | null>(null);
+  /** Set while the next screen of the infinite world is being dreamed. */
+  const [wandering, setWandering] = useState<string | null>(null);
+  /** Where to drop the player on the next scene (entering from an edge). */
+  const [spawn, setSpawn] = useState<{ x: number; y: number } | null>(null);
+  /** Show the engine's traced frame — the vision pass, made visible. */
+  const [showVision, setShowVision] = useState(false);
+  const [screensDreamed, setScreensDreamed] = useState(0);
   const [ambient, setAmbient] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [voiceOn, setVoiceOn] = useState(true);
@@ -125,6 +155,10 @@ export function World() {
 
   const scenesRef = useRef<Map<string, SceneData>>(new Map());
   const interiorPromises = useRef<Map<string, Promise<SceneData>>>(new Map());
+  /** In-flight overworld screens, keyed by scene id (s{x}_{y}). */
+  const screenPromises = useRef<Map<string, Promise<SceneData>>>(new Map());
+  /** Bible rooms (0-2) already anchored to a building somewhere. */
+  const placedRoomsRef = useRef<Set<number>>(new Set());
   // Preload caches — everything the player might do next is already made.
   const voiceCache = useRef<Map<string, Promise<string | null>>>(new Map());
   const dialogueCache = useRef<Map<string, Promise<DialogueResponse>>>(new Map());
@@ -227,12 +261,14 @@ export function World() {
   );
 
   const prefetchInterior = useCallback(
-    (theBible: GameBible, h: Hotspot) => {
-      if (typeof h.clueIndex !== "number" || interiorPromises.current.has(h.id))
-        return;
+    (theBible: GameBible, h: Hotspot, parentId: string) => {
+      if (typeof h.clueIndex !== "number") return;
+      const roomKey = `room${h.clueIndex}`;
+      if (interiorPromises.current.has(roomKey)) return;
       const p = post<{ scene: SceneData }>("/api/scene", {
         bible: theBible,
         roomIndex: h.clueIndex,
+        parentId,
       }).then(({ scene: s }) => {
         scenesRef.current.set(s.id, s);
         addCalls(2); // interior = layout text + image
@@ -240,10 +276,74 @@ export function World() {
         prefetchConversation(theBible, s);
         return s;
       });
-      p.catch(() => interiorPromises.current.delete(h.id));
-      interiorPromises.current.set(h.id, p);
+      p.catch(() => interiorPromises.current.delete(roomKey));
+      interiorPromises.current.set(roomKey, p);
     },
     [addCalls, prefetchConversation]
+  );
+
+  /* ---------------- the infinite loop, client side ---------------- */
+
+  /**
+   * Get-or-dream the screen at (x,y): paint → trace → read. Registers any
+   * bible room the vision pass anchored here and pre-builds its interior.
+   */
+  const ensureScreen = useCallback(
+    (
+      theBible: GameBible,
+      x: number,
+      y: number,
+      arriveFrom: ExitDirection | null,
+      prevScene: SceneData | null
+    ): Promise<SceneData> => {
+      const id = `s${x}_${y}`;
+      const cached = scenesRef.current.get(id);
+      if (cached) return Promise.resolve(cached);
+      const pending = screenPromises.current.get(id);
+      if (pending) return pending;
+
+      const unplacedRooms = [0, 1, 2].filter(
+        (i) => !placedRoomsRef.current.has(i)
+      );
+      const p = post<{ scene: SceneData }>("/api/screen", {
+        bible: theBible,
+        x,
+        y,
+        arriveFrom,
+        prevImage: prevScene ? stripDataUrl(prevScene.image) : null,
+        unplacedRooms,
+      }).then(({ scene: s }) => {
+        scenesRef.current.set(s.id, s);
+        addCalls(3); // frame + trace + vision
+        setScreensDreamed((n) => n + 1);
+        for (const h of s.hotspots) {
+          if (h.kind === "building" && typeof h.clueIndex === "number") {
+            placedRoomsRef.current.add(h.clueIndex);
+            prefetchInterior(theBible, h, s.id);
+          }
+        }
+        return s;
+      });
+      p.catch(() => screenPromises.current.delete(id));
+      screenPromises.current.set(id, p);
+      return p;
+    },
+    [addCalls, prefetchInterior]
+  );
+
+  /** Pre-dream every open neighbor of a screen while the player explores it. */
+  const prefetchNeighbors = useCallback(
+    (theBible: GameBible, s: SceneData) => {
+      if (!s.coord || !s.edges) return;
+      (Object.keys(EDGE_META) as ExitDirection[]).forEach((dir) => {
+        if (!s.edges![dir]) return;
+        const { dx, dy } = EDGE_META[dir];
+        ensureScreen(theBible, s.coord!.x + dx, s.coord!.y + dy, dir, s).catch(
+          () => {}
+        );
+      });
+    },
+    [ensureScreen]
   );
 
   /* ---------------- boot ---------------- */
@@ -258,9 +358,15 @@ export function World() {
       setPremise(null);
       scenesRef.current = new Map();
       interiorPromises.current = new Map();
+      screenPromises.current = new Map();
+      placedRoomsRef.current = new Set();
       voiceCache.current = new Map();
       dialogueCache.current = new Map();
       finalePromise.current = null;
+      setWandering(null);
+      setSpawn(null);
+      setShowVision(false);
+      setScreensDreamed(0);
 
       setBible(null);
       setCluesFound([false, false, false]);
@@ -296,23 +402,22 @@ export function World() {
         setBible(theBible);
         addCalls(1); // the game bible
 
-        // 2) Paint the opening street from the bible's plan.
-        setBootStatus("Painting your opening scene…");
-        const { scene: street } = await post<{ scene: SceneData }>(
-          "/api/scene",
-          { bible: theBible }
-        );
-        addCalls(2); // street = layout + image
+        // 2) The first turn of the infinite loop: paint screen (0,0), have
+        //    the model trace borders over its own frame, read both images
+        //    into hotspots and open edges.
+        setBootStatus("Painting the first screen… then teaching the engine to see it…");
+        const origin = await ensureScreen(theBible, 0, 0, null, null);
         setQuestHook(theBible.story.goal);
-        showScene(street);
+        setSpawn(null);
+        showScene(origin);
         setPhase("playing");
 
-        // 3) Forge the character FROM the street frame, so the sprite shares
-        //    the scene's exact art style and lighting (a marker stands in
+        // 3) Forge the character FROM the first frame, so the sprite shares
+        //    the world's exact art style and lighting (a marker stands in
         //    until it lands).
         post<{ sprite: string }>("/api/sprite", {
           premise: chosen,
-          referenceFrame: stripDataUrl(street.image),
+          referenceFrame: stripDataUrl(origin.image),
         })
           .then(({ sprite: s }) => {
             addCalls(1); // character render
@@ -321,10 +426,10 @@ export function World() {
           .then(setSprite)
           .catch(() => {});
 
-        // 4) Pre-generate every interior while the player walks around.
-        street.hotspots
-          .filter((h) => h.kind === "building")
-          .forEach((h) => prefetchInterior(theBible, h));
+        // 4) Pre-dream the neighboring screens while the player explores.
+        //    (Interiors pre-build the moment a screen anchors a bible room —
+        //    that happens inside ensureScreen.)
+        prefetchNeighbors(theBible, origin);
 
         // 5) Pre-generate the VICTORY finale too — the ending is already
         //    written in the bible, so "Unravel the truth" can land instantly.
@@ -344,7 +449,7 @@ export function World() {
         setPhase("select");
       }
     },
-    [prefetchInterior, showScene, addCalls, fetchVoice]
+    [ensureScreen, prefetchNeighbors, showScene, addCalls, fetchVoice]
   );
 
   /* ---------------- interaction ---------------- */
@@ -356,8 +461,11 @@ export function World() {
       if (h.kind === "exit") {
         stopVoice();
         setDialogue(null);
-        const parent = scenesRef.current.get(scene.parentId ?? "street");
-        if (parent) showScene(parent);
+        const parent = scenesRef.current.get(scene.parentId ?? ORIGIN_ID);
+        if (parent) {
+          setSpawn(null);
+          showScene(parent);
+        }
         return;
       }
 
@@ -401,8 +509,9 @@ export function World() {
         };
         scenesRef.current.set(updated.id, updated);
         if (h.leadsOutside) {
-          const parent = scenesRef.current.get(scene.parentId ?? "street");
+          const parent = scenesRef.current.get(scene.parentId ?? ORIGIN_ID);
           if (parent) {
+            setSpawn(null);
             showScene(parent);
             return;
           }
@@ -424,14 +533,23 @@ export function World() {
       }
 
       if (h.kind === "building" && bible) {
+        // Flavor buildings exist in the picture but hold no bible room.
+        if (typeof h.clueIndex !== "number") {
+          setAmbient(`${h.name} — the door is bolted shut.`);
+          setTimeout(() => setAmbient(null), 3000);
+          return;
+        }
         setEntering(h.name);
         try {
-          let interior = scenesRef.current.get(h.id);
+          let interior = scenesRef.current.get(`b${h.clueIndex}`);
           if (!interior) {
-            prefetchInterior(bible, h);
-            interior = await interiorPromises.current.get(h.id);
+            prefetchInterior(bible, h, scene.id);
+            interior = await interiorPromises.current.get(`room${h.clueIndex}`);
           }
-          if (interior) showScene(interior);
+          if (interior) {
+            setSpawn(null);
+            showScene(interior);
+          }
         } catch {
           setError(`Couldn't step into ${h.name}. Try again.`);
           setTimeout(() => setError(null), 4000);
@@ -441,6 +559,33 @@ export function World() {
       }
     },
     [premise, scene, bible, prefetchInterior, showScene, speak, stopVoice]
+  );
+
+  /** Walking off an open edge — the infinite loop, triggered by the feet. */
+  const onExitEdge = useCallback(
+    async (dir: ExitDirection) => {
+      if (!bible || !scene?.coord) return;
+      const { dx, dy, spawn: arriveAt, word } = EDGE_META[dir];
+      const nx = scene.coord.x + dx;
+      const ny = scene.coord.y + dy;
+      let next = scenesRef.current.get(`s${nx}_${ny}`) ?? null;
+      if (!next) {
+        setWandering(word);
+        try {
+          next = await ensureScreen(bible, nx, ny, dir, scene);
+        } catch {
+          setError("The path ahead dissolved into mist. Try again.");
+          setTimeout(() => setError(null), 4000);
+          return;
+        } finally {
+          setWandering(null);
+        }
+      }
+      setSpawn(arriveAt);
+      showScene(next);
+      prefetchNeighbors(bible, next);
+    },
+    [bible, scene, ensureScreen, prefetchNeighbors, showScene]
   );
 
   const onSay = useCallback(
@@ -593,8 +738,14 @@ export function World() {
     setGenCalls(0);
     setInteriorsReady(0);
     setInventory([]);
+    setWandering(null);
+    setSpawn(null);
+    setShowVision(false);
+    setScreensDreamed(0);
     voiceCache.current = new Map();
     dialogueCache.current = new Map();
+    screenPromises.current = new Map();
+    placedRoomsRef.current = new Set();
     finalePromise.current = null;
   }, [stopVoice]);
 
@@ -640,8 +791,11 @@ export function World() {
       <GameCanvas
         scene={scene}
         sprite={sprite}
-        paused={dialogue !== null || entering !== null}
+        paused={dialogue !== null || entering !== null || wandering !== null}
         onInteract={onInteract}
+        spawn={spawn}
+        onExitEdge={onExitEdge}
+        showVision={showVision}
       />
 
       {/* --- HUD: world / scene / quest / clues --- */}
@@ -723,6 +877,21 @@ export function World() {
           )}
         </div>
         <div className="pointer-events-auto flex items-center gap-2">
+          {scene.annotated && (
+            <button
+              onClick={() => setShowVision((v) => !v)}
+              className={`panel flex h-9 w-9 items-center justify-center rounded-full transition active:scale-95 ${
+                showVision ? "text-primary" : "text-inksoft"
+              }`}
+              title={
+                showVision
+                  ? "Engine vision: the borders the model traced over its own frame"
+                  : "Show what the engine sees"
+              }
+            >
+              <Eye size={15} />
+            </button>
+          )}
           <button
             onClick={() => setVoiceOn((v) => !v)}
             className={`panel flex h-9 w-9 items-center justify-center rounded-full transition active:scale-95 ${
@@ -767,19 +936,46 @@ export function World() {
       {!dialogue && !finale && (
         <div
           className="panel pointer-events-none absolute bottom-4 right-4 z-10 flex items-center gap-2 rounded-lg px-3 py-2"
-          title="Every frame, character, room, line, and voice is generated live; interiors pre-build in parallel while you walk"
+          title="Every screen is painted, then the model traces borders over its own frame and reads both images back into the game; neighbors pre-dream while you walk"
         >
           <Zap size={11} strokeWidth={2.5} className="text-primary" />
           <span className="text-[11px] font-semibold tabular-nums text-ink">
             {genCalls} generations
           </span>
           <span className="h-3 w-px bg-ink/15" />
+          <Compass size={11} strokeWidth={2.5} className="text-primary" />
+          <span className="text-[11px] font-semibold tabular-nums text-ink">
+            {screensDreamed} screens
+          </span>
+          <span className="h-3 w-px bg-ink/15" />
           <DoorOpen size={11} strokeWidth={2.5} className="text-primary" />
           <span className="text-[11px] font-semibold tabular-nums text-ink">
-            {interiorsReady >= 3 ? "rooms ready · instant" : `rooms ${interiorsReady}/3`}
+            rooms {interiorsReady}/3
           </span>
         </div>
       )}
+
+      {/* --- Wandering overlay: the next screen is being dreamed --- */}
+      <AnimatePresence>
+        {wandering && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="absolute inset-0 z-20 flex items-center justify-center bg-black/60"
+          >
+            <div className="panel rounded-2xl px-6 py-4 text-center">
+              <p className="font-display text-xl font-bold text-ink">
+                Wandering {wandering}…
+              </p>
+              <p className="mt-1 flex items-center justify-center gap-1.5 text-sm font-medium text-inksoft">
+                <span className="animate-breathe inline-block h-1.5 w-1.5 rounded-full bg-primary" />
+                painting the next screen · tracing it · reading it
+              </p>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* --- Entering overlay --- */}
       <AnimatePresence>
