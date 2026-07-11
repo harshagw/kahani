@@ -54,7 +54,7 @@ export function GameCanvas({
 
     const startX = scene.kind === "interior" ? 50 : 12;
     const depth = 0.6;
-    const top = Math.max(45, Math.min(80, scene.groundTop ?? DEFAULT_BAND_TOP));
+    const top = Math.max(32, Math.min(80, scene.groundTop ?? DEFAULT_BAND_TOP));
     const py = top + (BAND_BOTTOM - top) * depth;
     const blockedAt = (x: number) =>
       (scene.obstacles ?? []).some(
@@ -76,7 +76,7 @@ export function GameCanvas({
 
   // Ground horizon from the vision pass over the actual frame.
   const bandTop = Math.max(
-    45,
+    32,
     Math.min(80, scene.groundTop ?? DEFAULT_BAND_TOP)
   );
 
@@ -307,8 +307,8 @@ export function GameCanvas({
       // --- Player sprite (sized against the IMAGE, not the window) ---
       const footX = X(px);
       const footY = Y(py);
-      const scale = 0.62 + 0.48 * p.depth;
-      const spriteH = dh * 0.3 * scale;
+      const scale = 0.85 + 0.2 * p.depth;
+      const spriteH = dh * 0.16 * scale;
 
       // soft ground shadow
       ctx.beginPath();

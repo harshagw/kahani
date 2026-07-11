@@ -11,9 +11,9 @@ import type {
   StoryArc,
 } from "./universe";
 
-/** Appended to every scene render so the world reads as one isometric game. */
+/** Appended to every scene render so the world reads as one cozy game town. */
 const ISO_STYLE =
-  "Rendered as an isometric 3/4 high-angle video-game diorama: elevated camera looking down at ~40 degrees, clean readable geometry, game-art composition.";
+  "Rendered as a cute miniature isometric video-game town diorama (Pokemon / HD-2D style): high-angle top-down 3/4 camera at ~60 degrees elevation, small charming buildings with large clearly-readable doorways, wide open walkable ground filling most of the frame, crisp clean game-art with soft shadows, no depth-of-field blur.";
 
 const TEXT_MODEL = process.env.TEXT_MODEL || "gemini-2.5-flash";
 const IMAGE_MODEL = process.env.IMAGE_MODEL || "gemini-2.5-flash-image";
@@ -164,7 +164,7 @@ async function analyzeWalkability(
       obstacles: Rect[];
       depthGrid?: number[];
     };
-    const groundTop = Math.max(40, Math.min(80, Math.round(parsed.groundTop)));
+    const groundTop = Math.max(28, Math.min(80, Math.round(parsed.groundTop)));
     const depthGrid = Array.isArray(parsed.depthGrid)
       ? parsed.depthGrid
           .slice(0, 160)
@@ -221,7 +221,7 @@ const streetSchema = {
     imagePrompt: {
       type: Type.STRING,
       description:
-        "Rich prompt for a WIDE isometric 3/4 high-angle game-diorama shot of this street/exterior. The lower half must be open walkable ground with NO people in the near foreground. Buildings with distinct doorways line the scene. Authentic, era- and place-faithful detail for this universe. No text in image.",
+        "Rich prompt for a miniature isometric game-town shot of this street/exterior, seen from high above like a tiny diorama. MOST of the frame is open walkable ground with NO people; small buildings with big distinct doorways sit around the edges. Authentic, era- and place-faithful detail for this universe. No text in image.",
     },
     buildings: {
       type: Type.ARRAY,
@@ -253,7 +253,7 @@ const interiorSchema = {
     imagePrompt: {
       type: Type.STRING,
       description:
-        "Rich prompt for a WIDE isometric 3/4 high-angle game-diorama shot of this interior with ONE character (the NPC) visible mid-frame. Lower half open walkable floor, no other people in the near foreground. Authentic, era- and place-faithful detail for this universe. No text in image.",
+        "Rich prompt for a miniature isometric game-room shot of this interior seen from high above, with ONE character (the NPC) visible. Most of the frame is open walkable floor; furniture hugs the walls. Authentic, era- and place-faithful detail for this universe. No text in image.",
     },
     npc: {
       type: Type.OBJECT,
@@ -475,7 +475,7 @@ export async function generateSprite(
     referenceFrame
       ? "CRITICAL: render the character in EXACTLY the same art style, rendering technique, lighting direction, and color grade as the reference image, as if painted by the same artist for the same scene."
       : `Style: ${premise.styleBible}`,
-    "Single character, standing, relaxed, facing right, full body head to feet, seen from a 3/4 high-angle isometric game perspective (slightly from above) to match the scene camera.",
+    "Single small chibi-proportioned game character (about 3 heads tall, cute but not childish), standing relaxed, facing right, full body head to feet, seen from a high-angle top-down 3/4 game camera to match the scene.",
     "Isolated on a PURE WHITE background, no shadow, no ground, no text, no border. Character fills most of the frame height.",
   ].join(" ");
   const img = await generateImage(

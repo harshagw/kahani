@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import dynamic from "next/dynamic";
 import { AnimatePresence, motion } from "framer-motion";
 import { DoorOpen, Search, Volume2, VolumeX, Zap } from "lucide-react";
 import type { Premise } from "@/lib/types";
@@ -15,22 +14,6 @@ import type {
 import { Landing } from "./Landing";
 import { GameCanvas } from "./GameCanvas";
 import { DialogueBox } from "./DialogueBox";
-
-// The depth-rendered scene (Three.js) — client-only; the flat 2D canvas stays
-// as an automatic fallback wherever WebGL is unavailable.
-const GameCanvas3D = dynamic(
-  () => import("./GameCanvas3D").then((m) => m.GameCanvas3D),
-  { ssr: false }
-);
-
-function webglAvailable(): boolean {
-  try {
-    const c = document.createElement("canvas");
-    return !!(c.getContext("webgl2") || c.getContext("webgl"));
-  } catch {
-    return false;
-  }
-}
 
 type Phase = "select" | "booting" | "playing";
 
@@ -121,8 +104,6 @@ export function World() {
   const [error, setError] = useState<string | null>(null);
   const [voiceOn, setVoiceOn] = useState(true);
   const [speaking, setSpeaking] = useState(false);
-  const [use3D, setUse3D] = useState(true);
-  useEffect(() => setUse3D(webglAvailable()), []);
 
   // Dialogue state
   const [dialogue, setDialogue] = useState<{
@@ -574,21 +555,12 @@ export function World() {
 
   return (
     <div className="relative h-dvh w-full overflow-hidden bg-ink">
-      {use3D ? (
-        <GameCanvas3D
-          scene={scene}
-          sprite={sprite}
-          paused={dialogue !== null || entering !== null}
-          onInteract={onInteract}
-        />
-      ) : (
-        <GameCanvas
-          scene={scene}
-          sprite={sprite}
-          paused={dialogue !== null || entering !== null}
-          onInteract={onInteract}
-        />
-      )}
+      <GameCanvas
+        scene={scene}
+        sprite={sprite}
+        paused={dialogue !== null || entering !== null}
+        onInteract={onInteract}
+      />
 
       {/* --- HUD: world / scene / quest / clues --- */}
       <div className="pointer-events-none absolute inset-x-0 top-0 z-10 flex items-start justify-between gap-3 p-4">
