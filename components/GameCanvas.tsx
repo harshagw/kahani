@@ -272,7 +272,13 @@ export function GameCanvas({
         const bob = Math.sin(t + h.rect.x) * 3;
         ctx.beginPath();
         ctx.arc(hx + hw / 2, hy - 10 + bob, isNear ? 6 : 4, 0, Math.PI * 2);
-        ctx.fillStyle = isNear ? "#ffb24d" : "rgba(255,255,255,0.75)";
+        const baseColor =
+          h.kind === "item"
+            ? "rgba(255,215,80,0.9)"
+            : h.kind === "action"
+              ? "rgba(120,200,255,0.9)"
+              : "rgba(255,255,255,0.75)";
+        ctx.fillStyle = isNear ? "#ffb24d" : baseColor;
         ctx.shadowColor = "rgba(0,0,0,0.6)";
         ctx.shadowBlur = 6;
         ctx.fill();
@@ -321,7 +327,9 @@ export function GameCanvas({
             ? `E — enter ${near.name}`
             : near.kind === "npc"
               ? `E — talk to ${near.name}`
-              : `E — ${near.name}`;
+              : near.kind === "item"
+                ? `E — pick up ${near.name}`
+                : `E — ${near.name}`;
         ctx.font = "600 14px var(--font-sans), system-ui, sans-serif";
         const tw = ctx.measureText(label).width;
         const bx = footX - tw / 2 - 12;

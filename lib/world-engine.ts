@@ -13,7 +13,7 @@ import type {
 
 /** Appended to every scene render so the world reads as one retro RPG overworld. */
 const PIXEL_STYLE =
-  "Rendered as a strict top-view 2D 16-bit retro RPG overworld map (classic Pokemon Game Boy Advance style, camera looking straight down): flat bird's-eye view, chunky clean pixel-art, tile-based ground (paths, grass, paving) filling most of the frame, small buildings seen from above with their entrance door clearly marked on the near edge, bright saturated flat colors, crisp hard pixel edges, no perspective, no isometric angle, no gradients, no blur.";
+  "Rendered as a TRUE overhead top-view 2D 16-bit retro RPG map (classic Pokemon overworld, camera pointing straight down at the ground): pure bird's-eye view, chunky clean pixel-art tiles, walkable paths/grass/paving filling most of the frame, buildings seen as ROOFS from above with their entrance door visible on the bottom edge, small props (wells, carts, pots) seen from directly above, bright flat colors, crisp pixel edges, no facades, no horizon, no sky, no perspective, no isometric angle.";
 
 const TEXT_MODEL = process.env.TEXT_MODEL || "gemini-2.5-flash";
 const IMAGE_MODEL = process.env.IMAGE_MODEL || "gemini-2.5-flash-image";
@@ -214,8 +214,44 @@ const streetSchema = {
         required: ["name", "hint", "interiorPrompt", "rect"],
       },
     },
+    items: {
+      type: Type.ARRAY,
+      description:
+        "1-2 collectible objects lying in the OPEN walkable area (never inside buildings), positioned where they appear in the image. Small, pickable, story-flavored.",
+      items: {
+        type: Type.OBJECT,
+        properties: {
+          name: { type: Type.STRING, description: "e.g. 'Rusty temple key', 'Torn ledger page'" },
+          hint: { type: Type.STRING, description: "Near hint, max 8 words." },
+          rect: rectSchema,
+        },
+        required: ["name", "hint", "rect"],
+      },
+    },
+    actions: {
+      type: Type.ARRAY,
+      description:
+        "1-2 environmental interactions in the open area: ring a bell, peek through a gate, search a cart, draw from a well. Each has a concrete outcome.",
+      items: {
+        type: Type.OBJECT,
+        properties: {
+          name: { type: Type.STRING, description: "Imperative, 2-5 words: 'Ring the temple bell'" },
+          hint: { type: Type.STRING, description: "Near hint, max 8 words." },
+          outcome: {
+            type: Type.STRING,
+            description: "What happens when performed, max 20 words, vivid.",
+          },
+          grantsItem: {
+            type: Type.STRING,
+            description: "Item gained by this action, or empty string.",
+          },
+          rect: rectSchema,
+        },
+        required: ["name", "hint", "outcome", "grantsItem", "rect"],
+      },
+    },
   },
-  required: ["title", "ambient", "questHook", "imagePrompt", "buildings"],
+  required: ["title", "ambient", "questHook", "imagePrompt", "buildings", "items", "actions"],
 };
 
 const interiorSchema = {
@@ -265,8 +301,42 @@ const interiorSchema = {
       ...rectSchema,
       description: "Where the exit door is (walk there to leave).",
     },
+    items: {
+      type: Type.ARRAY,
+      description:
+        "1-2 collectible objects visible in the room, on floors/tables, positioned where they appear. Story-flavored.",
+      items: {
+        type: Type.OBJECT,
+        properties: {
+          name: { type: Type.STRING },
+          hint: { type: Type.STRING, description: "Near hint, max 8 words." },
+          rect: rectSchema,
+        },
+        required: ["name", "hint", "rect"],
+      },
+    },
+    actions: {
+      type: Type.ARRAY,
+      description:
+        "1-2 interactions in the room: climb out the window (alternate exit), open a chest, read a notice, light a lamp. Each has a concrete outcome.",
+      items: {
+        type: Type.OBJECT,
+        properties: {
+          name: { type: Type.STRING, description: "Imperative, 2-5 words" },
+          hint: { type: Type.STRING, description: "Near hint, max 8 words." },
+          outcome: { type: Type.STRING, description: "What happens, max 20 words." },
+          grantsItem: { type: Type.STRING, description: "Item gained, or empty string." },
+          leadsOutside: {
+            type: Type.BOOLEAN,
+            description: "True if this action exits the building (window, back door).",
+          },
+          rect: rectSchema,
+        },
+        required: ["name", "hint", "outcome", "grantsItem", "leadsOutside", "rect"],
+      },
+    },
   },
-  required: ["title", "ambient", "imagePrompt", "npc", "npcZone", "exitZone"],
+  required: ["title", "ambient", "imagePrompt", "npc", "npcZone", "exitZone", "items", "actions"],
 };
 
 export async function generateStreetScene(
@@ -299,6 +369,14 @@ export async function generateStreetScene(
     questHook: string;
     imagePrompt: string;
     buildings: { name: string; hint: string; interiorPrompt: string; rect: Rect }[];
+    items?: { name: string; hint: string; rect: Rect }[];
+    actions?: {
+      name: string;
+      hint: string;
+      outcome: string;
+      grantsItem?: string;
+      rect: Rect;
+    }[];
   };
 
   const img = await generateImage(
@@ -316,13 +394,34 @@ export async function generateStreetScene(
 
   const hotspots: Hotspot[] = spec.buildings.slice(0, 3).map((b, i) => ({
     id: `b${i}`,
-    kind: "building",
+    kind: "building" as const,
     name: b.name,
     hint: b.hint,
     rect: clampRect(b.rect),
     interiorPrompt: b.interiorPrompt,
     clueIndex: i,
   }));
+  (spec.items ?? []).slice(0, 2).forEach((it, i) =>
+    hotspots.push({
+      id: `street-item${i}`,
+      kind: "item",
+      name: it.name,
+      hint: it.hint,
+      rect: clampRect(it.rect),
+      itemName: it.name,
+    })
+  );
+  (spec.actions ?? []).slice(0, 2).forEach((a, i) =>
+    hotspots.push({
+      id: `street-act${i}`,
+      kind: "action",
+      name: a.name,
+      hint: a.hint,
+      rect: clampRect(a.rect),
+      outcome: a.outcome,
+      grantsItem: a.grantsItem?.trim() || undefined,
+    })
+  );
 
   return {
     id: "street",
@@ -381,6 +480,15 @@ export async function generateInteriorScene(
     npc: NpcDef;
     npcZone: Rect;
     exitZone: Rect;
+    items?: { name: string; hint: string; rect: Rect }[];
+    actions?: {
+      name: string;
+      hint: string;
+      outcome: string;
+      grantsItem?: string;
+      leadsOutside?: boolean;
+      rect: Rect;
+    }[];
   };
 
   const img = await generateImage(
@@ -411,6 +519,28 @@ export async function generateInteriorScene(
       rect: clampRect(spec.exitZone),
     },
   ];
+  (spec.items ?? []).slice(0, 2).forEach((it, i) =>
+    hotspots.push({
+      id: `${building.id}-item${i}`,
+      kind: "item",
+      name: it.name,
+      hint: it.hint,
+      rect: clampRect(it.rect),
+      itemName: it.name,
+    })
+  );
+  (spec.actions ?? []).slice(0, 2).forEach((a, i) =>
+    hotspots.push({
+      id: `${building.id}-act${i}`,
+      kind: "action",
+      name: a.name,
+      hint: a.hint,
+      rect: clampRect(a.rect),
+      outcome: a.outcome,
+      grantsItem: a.grantsItem?.trim() || undefined,
+      leadsOutside: Boolean(a.leadsOutside),
+    })
+  );
 
   return {
     id: building.id,
@@ -444,7 +574,7 @@ export async function generateSprite(
     referenceFrame
       ? "CRITICAL: render the character in EXACTLY the same art style, rendering technique, lighting direction, and color grade as the reference image, as if painted by the same artist for the same scene."
       : `Style: ${premise.styleBible}`,
-    "Single tiny 16-bit pixel-art RPG character sprite (classic Pokemon GBA proportions, about 2.5 heads tall), standing, facing right in side view, full body head to feet, chunky clean pixels.",
+    "Single tiny 16-bit pixel-art RPG overworld character sprite seen from above and slightly behind (classic Pokemon walking-sprite angle: big head and shoulders from above, small feet), facing right, full body, chunky clean pixels.",
     "Isolated on a PURE WHITE background, no shadow, no ground, no text, no border. Character fills most of the frame height.",
   ].join(" ");
   const img = await generateImage(
@@ -503,7 +633,12 @@ export async function generateDialogue(
   questHook: string,
   history: DialogueTurn[],
   playerLine: string | null,
-  storyCtx?: { clue: string | null; clueFound: boolean; exchanges: number }
+  storyCtx?: {
+    clue: string | null;
+    clueFound: boolean;
+    exchanges: number;
+    inventory?: string[];
+  }
 ): Promise<DialogueResponse> {
   const lines: string[] = [
     `UNIVERSE: ${premise.title} — ${premise.setup}`,
@@ -512,6 +647,11 @@ export async function generateDialogue(
     `YOU ARE: ${npc.name}, ${npc.role}. ${npc.persona}`,
   ];
   if (npc.quirk) lines.push(`YOUR VERBAL QUIRK (use it): ${npc.quirk}`);
+  if (storyCtx?.inventory?.length) {
+    lines.push(
+      `THE PLAYER VISIBLY CARRIES: ${storyCtx.inventory.join(", ")} — react to these when it makes sense.`
+    );
+  }
   if (storyCtx?.clue && !storyCtx.clueFound) {
     lines.push(`THE CLUE YOU GUARD: ${storyCtx.clue}`);
   }

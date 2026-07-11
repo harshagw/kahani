@@ -16,7 +16,7 @@ export type NpcDef = {
 
 export type Hotspot = {
   id: string;
-  kind: "building" | "npc" | "exit";
+  kind: "building" | "npc" | "exit" | "item" | "action";
   name: string;
   /** Short hint shown when the player is near ("A tea stall, lamps lit"). */
   hint: string;
@@ -25,6 +25,14 @@ export type Hotspot = {
   interiorPrompt?: string;
   /** Which story clue this building's NPC guards. */
   clueIndex?: number;
+  /** For items: what goes into the inventory when picked up. */
+  itemName?: string;
+  /** For actions: what happens when performed (≤20 words, shown + spoken). */
+  outcome?: string;
+  /** For actions: an item the action yields. */
+  grantsItem?: string;
+  /** For actions: performing it exits back outside (window, back door…). */
+  leadsOutside?: boolean;
 };
 
 /** The hidden arc the whole world converges toward. */

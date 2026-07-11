@@ -17,6 +17,7 @@ type DialogueRequest = {
   clue?: string | null;
   clueFound?: boolean;
   exchanges?: number;
+  inventory?: string[];
 };
 
 export async function POST(req: NextRequest) {
@@ -43,6 +44,7 @@ export async function POST(req: NextRequest) {
         exchanges:
           body.exchanges ??
           (body.history ?? []).filter((t) => t.speaker === "player").length,
+        inventory: body.inventory ?? [],
       }
     );
     return NextResponse.json(reply);

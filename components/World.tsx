@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { DoorOpen, Search, Volume2, VolumeX, Zap } from "lucide-react";
+import { DoorOpen, Package, Search, Volume2, VolumeX, Zap } from "lucide-react";
 import type { Premise } from "@/lib/types";
 import type {
   DialogueResponse,
@@ -88,6 +88,7 @@ export function World() {
     image: string;
   } | null>(null);
   const [finaleLoading, setFinaleLoading] = useState(false);
+  const [inventory, setInventory] = useState<string[]>([]);
 
   // The engine made visible: model calls powering this run (text + image +
   // vision + voice), and how many rooms have pre-built while the player walks.
@@ -273,6 +274,7 @@ export function World() {
       setFinaleLoading(false);
       setGenCalls(0);
       setInteriorsReady(0);
+      setInventory([]);
 
       try {
         // 1) Expand the player's idea into a universe + hidden story arc.
@@ -363,6 +365,52 @@ export function World() {
         setDialogue(null);
         const parent = scenesRef.current.get(scene.parentId ?? "street");
         if (parent) showScene(parent);
+        return;
+      }
+
+      if (h.kind === "item" && h.itemName) {
+        setInventory((inv) =>
+          inv.includes(h.itemName!) ? inv : [...inv, h.itemName!]
+        );
+        // consume the hotspot from this scene
+        const updated = {
+          ...scene,
+          hotspots: scene.hotspots.filter((x) => x.id !== h.id),
+        };
+        scenesRef.current.set(updated.id, updated);
+        setScene(updated);
+        setAmbient(`Picked up: ${h.itemName}`);
+        setTimeout(() => setAmbient(null), 3500);
+        return;
+      }
+
+      if (h.kind === "action") {
+        if (h.grantsItem) {
+          const item = h.grantsItem;
+          setInventory((inv) => (inv.includes(item) ? inv : [...inv, item]));
+        }
+        setAmbient(
+          h.outcome
+            ? h.grantsItem
+              ? `${h.outcome} (+ ${h.grantsItem})`
+              : h.outcome
+            : `${h.name} — done.`
+        );
+        setTimeout(() => setAmbient(null), 4500);
+        // one-shot: consume the action
+        const updated = {
+          ...scene,
+          hotspots: scene.hotspots.filter((x) => x.id !== h.id),
+        };
+        scenesRef.current.set(updated.id, updated);
+        if (h.leadsOutside) {
+          const parent = scenesRef.current.get(scene.parentId ?? "street");
+          if (parent) {
+            showScene(parent);
+            return;
+          }
+        }
+        setScene(updated);
         return;
       }
 
@@ -464,7 +512,7 @@ export function World() {
         });
       }
     },
-    [premise, scene, dialogue, questHook, story, cluesFound, speak, addCalls]
+    [premise, scene, dialogue, questHook, story, cluesFound, speak, addCalls, inventory]
   );
 
   const allCluesFound = story ? cluesFound.every(Boolean) : false;
@@ -511,6 +559,7 @@ export function World() {
     setFinaleLoading(false);
     setGenCalls(0);
     setInteriorsReady(0);
+    setInventory([]);
     voiceCache.current = new Map();
     dialogueCache.current = new Map();
     finalePromise.current = null;
@@ -575,6 +624,19 @@ export function World() {
               </p>
             )}
           </div>
+          {inventory.length > 0 && (
+            <div className="panel flex w-fit max-w-xs flex-wrap items-center gap-1.5 rounded-2xl px-3 py-1.5">
+              <Package size={12} strokeWidth={2.5} className="text-primary" />
+              {inventory.map((it) => (
+                <span
+                  key={it}
+                  className="rounded-md bg-primary/10 px-1.5 py-0.5 text-[10px] font-bold text-primary"
+                >
+                  {it}
+                </span>
+              ))}
+            </div>
+          )}
           {story && (
             <div className="panel flex w-fit items-center gap-2 rounded-full px-3 py-1.5">
               <Search size={12} strokeWidth={2.5} className="text-primary" />
