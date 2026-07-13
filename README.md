@@ -8,9 +8,6 @@ Lite, a player character forged in the same art style, buildings you can
 enter, characters who speak to you out loud, and one hidden mystery that
 converges to a finale.
 
-Built solo at the **Google DeepMind Bangalore Hackathon** for **Problem
-Statement 3: High-Throughput Creative Workflows with NB2 Lite**.
-
 ## Why this needs NB2 Lite (generation is load-bearing)
 
 This is not a prompt-box-to-image app. The game **cannot exist** without
@@ -27,25 +24,12 @@ fast, cheap, high-volume generation:
   in-game "AI generations this run" ticker. At $0.034 / 1k images, a full
   playthrough costs well under a rupee.
 
+
+
 ## The pipeline per scene
 
-```
-player idea ──► Gemini: universe spec + hidden story arc (goal, secret, 3 clues)
-                  │
-                  ▼
-       Gemini: level design (buildings, doorway boxes, quest hook)
-                  │
-                  ▼
-       NB2 Lite: isometric street frame (<4s)
-                  │
-                  ├──► Gemini vision pass over the ACTUAL frame:
-                  │      ground horizon + obstacle boxes (water, crowds, stalls)
-                  │      → real collision, no walking on water
-                  ├──► NB2 Lite: player sprite, using the street frame as a
-                  │      style reference → chroma-keyed onto the canvas
-                  └──► 3 interiors pre-generate in parallel (each: level
-                         design + NB2 frame + vision pass + an NPC persona)
-```
+<img width="765" height="645" alt="Screenshot 2026-07-11 at 6 39 56 PM" src="https://github.com/user-attachments/assets/655d9215-4dc4-4542-a39e-68899f742593" />
+
 
 **Dialogue:** each NPC guards one clue of the world's single mystery.
 Conversations are bounded — the clue must surface by the second exchange and
