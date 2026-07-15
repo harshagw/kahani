@@ -1,19 +1,31 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { ArrowRight } from "lucide-react";
 import { PREMISES } from "@/lib/premises";
+import { createClient } from "@/lib/supabase/client";
 import { PREMISE_ICON } from "./icons";
 
 const EASE_OUT = [0.16, 1, 0.3, 1] as const;
 
 export function Landing({ onStart }: { onStart: (idea: string) => void }) {
+  const router = useRouter();
   const [idea, setIdea] = useState("");
+  const [signingOut, setSigningOut] = useState(false);
 
   const submit = () => {
     const text = idea.trim();
     if (text) onStart(text);
+  };
+
+  const signOut = async () => {
+    setSigningOut(true);
+    const supabase = createClient();
+    await supabase.auth.signOut();
+    router.push("/login");
+    router.refresh();
   };
 
   return (
@@ -25,9 +37,19 @@ export function Landing({ onStart }: { onStart: (idea: string) => void }) {
         transition={{ duration: 0.5, ease: EASE_OUT }}
         className="md:sticky md:top-24"
       >
-        <p className="mb-6 border-b border-ink/15 pb-3 text-xs font-bold uppercase tracking-widest text-primary">
-          Generated live · Nano Banana 2 Lite
-        </p>
+        <div className="mb-6 flex items-end justify-between gap-4 border-b border-ink/15 pb-3">
+          <p className="text-xs font-bold uppercase tracking-widest text-primary">
+            Generated live · Nano Banana 2 Lite
+          </p>
+          <button
+            type="button"
+            onClick={signOut}
+            disabled={signingOut}
+            className="shrink-0 text-xs font-bold uppercase tracking-widest text-inksoft transition hover:text-ink disabled:opacity-50"
+          >
+            {signingOut ? "Signing out…" : "Sign out"}
+          </button>
+        </div>
 
         <h1 className="font-display text-6xl font-extrabold leading-[0.95] tracking-tight text-ink sm:text-7xl">
           Kahani

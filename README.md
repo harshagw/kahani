@@ -49,12 +49,36 @@ the secret, spoken aloud.
 
 ```bash
 npm install
-cp .env.example .env.local   # add GEMINI_API_KEY + model ids
+cp .env.example .env.local   # add GEMINI_API_KEY, Supabase keys, model ids
 npm run dev                  # http://localhost:3000
 ```
 
+Auth is required: unauthenticated visitors are sent to `/login`. Generation
+APIs return `401` without a valid Supabase session.
+
 Controls: **WASD / arrows** move · **E** enter / talk · **1–3** replies ·
 type anything to any character · **Esc** leave.
+
+## Auth (Supabase)
+
+Sign-in supports **Google** and **email magic link**. Configure once:
+
+1. Create a [Supabase](https://supabase.com/dashboard) project.
+2. Copy **Project URL** and **publishable** key (`sb_publishable_...`) into
+   `.env.local` as `NEXT_PUBLIC_SUPABASE_URL` and
+   `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`.
+3. **Authentication → URL Configuration**
+   - Site URL: `http://localhost:3000`
+   - Redirect URLs: `http://localhost:3000/auth/callback` (add your
+     production origin + `/auth/callback` when you deploy)
+4. **Authentication → Providers → Google** — enable and paste a Google Cloud
+   OAuth Client ID + Secret. In Google Cloud, set the authorized redirect URI
+   to `https://<project-ref>.supabase.co/auth/v1/callback`.
+5. **Authentication → Providers → Email** — enable magic links (passwordless).
+   You can disable email+password if you only want OTP/magic link.
+
+After sign-in, PKCE lands on `/auth/callback`, exchanges the code for a
+session cookie, then redirects into the game.
 
 ## Impact in India
 
@@ -71,7 +95,10 @@ art drops from lakhs to paise.
 | Path | Role |
 | --- | --- |
 | `lib/world-engine.ts` | universe/story/scene/sprite/dialogue/voice/finale generation |
-| `app/api/*` | `universe` · `scene` · `sprite` · `dialogue` · `voice` · `finale` |
+| `lib/supabase/*` | browser/server/proxy Supabase clients + `requireUser()` |
+| `proxy.ts` | session refresh; redirect unauthenticated users to `/login` |
+| `app/login` · `app/auth/callback` | Google / magic-link sign-in |
+| `app/api/*` | `universe` · `scene` · `sprite` · `dialogue` · `voice` · `finale` (auth-gated) |
 | `components/World.tsx` | orchestrator: scene cache, parallel prefetch, clues, finale |
 | `components/GameCanvas.tsx` | canvas loop: movement, collision, hotspots, sprite |
 | `components/DialogueBox.tsx` | voiced NPC conversations |

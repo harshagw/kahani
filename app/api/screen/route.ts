@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { requireUser } from "@/lib/supabase/auth";
 import { generateScreen, type Direction } from "@/lib/world-engine";
 import type { GameBible } from "@/lib/universe";
 
@@ -20,6 +21,10 @@ type ScreenRequest = {
 const DIRS = new Set(["n", "e", "s", "w"]);
 
 export async function POST(req: NextRequest) {
+  if (!(await requireUser())) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   let body: ScreenRequest;
   try {
     body = (await req.json()) as ScreenRequest;

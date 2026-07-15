@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { requireUser } from "@/lib/supabase/auth";
 import { generateBeat, generateImage, toDataUrl } from "@/lib/gemini";
 import type { TurnRequest, TurnResponse } from "@/lib/types";
 
@@ -7,6 +8,10 @@ export const runtime = "nodejs";
 export const maxDuration = 60;
 
 export async function POST(req: NextRequest) {
+  if (!(await requireUser())) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   let body: TurnRequest;
   try {
     body = (await req.json()) as TurnRequest;
