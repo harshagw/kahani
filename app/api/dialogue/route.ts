@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { requireUser } from "@/lib/supabase/auth";
 import { generateDialogue } from "@/lib/world-engine";
 import type { DialogueTurn, GameBible } from "@/lib/universe";
 
@@ -19,6 +20,10 @@ type DialogueRequest = {
 };
 
 export async function POST(req: NextRequest) {
+  if (!(await requireUser())) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   let body: DialogueRequest;
   try {
     body = (await req.json()) as DialogueRequest;

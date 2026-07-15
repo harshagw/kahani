@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { requireUser } from "@/lib/supabase/auth";
 import { generateSprite } from "@/lib/world-engine";
 import type { Premise } from "@/lib/types";
 
@@ -6,6 +7,10 @@ export const runtime = "nodejs";
 export const maxDuration = 60;
 
 export async function POST(req: NextRequest) {
+  if (!(await requireUser())) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   let body: { premise: Premise; referenceFrame?: string | null };
   try {
     body = (await req.json()) as {

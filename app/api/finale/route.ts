@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { requireUser } from "@/lib/supabase/auth";
 import { generateFinale, type FinaleOutcome } from "@/lib/world-engine";
 import type { GameBible } from "@/lib/universe";
 
@@ -13,6 +14,10 @@ type FinaleRequest = {
 };
 
 export async function POST(req: NextRequest) {
+  if (!(await requireUser())) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   let body: FinaleRequest;
   try {
     body = (await req.json()) as FinaleRequest;
