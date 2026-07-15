@@ -40,6 +40,11 @@ import type {
   SceneData,
 } from "@/lib/universe";
 import { GEN_CALL_COST } from "@/lib/constants";
+import {
+  getCachedImage,
+  preloadSceneImages,
+  warmSceneImages,
+} from "@/lib/image-cache";
 import { GameCanvas, type ExitDirection } from "./GameCanvas";
 import { DialogueBox } from "./DialogueBox";
 
@@ -217,6 +222,8 @@ export function World({ mode, gameId: routeGameId, initialIdea }: WorldProps) {
   const [bootStatus, setBootStatus] = useState("Loading your world…");
   const [entering, setEntering] = useState<string | null>(null);
   const [wandering, setWandering] = useState<string | null>(null);
+  /** Brief overlay while a cached scene's Storage image finishes decoding. */
+  const [assetLoading, setAssetLoading] = useState<string | null>(null);
   const [spawn, setSpawn] = useState<{ x: number; y: number } | null>(null);
   const [showVision, setShowVision] = useState(false);
   const [screensDreamed, setScreensDreamed] = useState(0);
@@ -305,7 +312,22 @@ export function World({ mode, gameId: routeGameId, initialIdea }: WorldProps) {
     setScene(s);
     setAmbient(s.ambient);
     setTimeout(() => setAmbient((a) => (a === s.ambient ? null : a)), 5000);
+    warmSceneImages(s);
   }, []);
+
+  /** Hold the current scene until backdrop images are decoded; optional overlay for cache hits. */
+  const ensureSceneReady = useCallback(
+    async (s: SceneData, loadingLabel?: string) => {
+      const needsOverlay = loadingLabel && !getCachedImage(s.image);
+      if (needsOverlay) setAssetLoading(loadingLabel);
+      try {
+        await preloadSceneImages(s);
+      } finally {
+        if (needsOverlay) setAssetLoading(null);
+      }
+    },
+    []
+  );
 
   const prefetchConversation = useCallback(
     (theBible: GameBible, s: SceneData) => {
@@ -353,6 +375,7 @@ export function World({ mode, gameId: routeGameId, initialIdea }: WorldProps) {
         addCalls(GEN_CALL_COST.interior);
         setInteriorsReady((r) => r + 1);
         saveScene(s);
+        warmSceneImages(s);
         prefetchConversation(theBible, s);
         return s;
       });
@@ -396,6 +419,7 @@ export function World({ mode, gameId: routeGameId, initialIdea }: WorldProps) {
         addCalls(GEN_CALL_COST.screen);
         setScreensDreamed((n) => n + 1);
         saveScene(s);
+        warmSceneImages(s);
         for (const h of s.hotspots) {
           if (h.kind === "building" && typeof h.clueIndex === "number") {
             placedRoomsRef.current.add(h.clueIndex);
@@ -446,6 +470,7 @@ export function World({ mode, gameId: routeGameId, initialIdea }: WorldProps) {
     setInteriorsReady(0);
     setInventory([]);
     setWandering(null);
+    setAssetLoading(null);
     setSpawn(null);
     setShowVision(false);
     setScreensDreamed(0);
@@ -461,7 +486,10 @@ export function World({ mode, gameId: routeGameId, initialIdea }: WorldProps) {
     setQuestHook(game.bible.story.goal);
 
     const map = new Map<string, SceneData>();
-    for (const s of game.scenes) map.set(s.id, s);
+    for (const s of game.scenes) {
+      map.set(s.id, s);
+      warmSceneImages(s);
+    }
     scenesRef.current = map;
     placedRoomsRef.current = rebuildPlacedRooms(game.scenes);
 
@@ -541,13 +569,14 @@ export function World({ mode, gameId: routeGameId, initialIdea }: WorldProps) {
         scenesRef.current.get(ORIGIN_ID) ??
         (await ensureScreen(theBible, 0, 0, null, null));
       setSpawn(null);
+      await ensureSceneReady(origin);
       showScene(origin);
       setPhase("playing");
       startSprite(chosen, origin, spriteUrl);
       prefetchNeighbors(theBible, origin);
       startFinales(theBible);
     },
-    [ensureScreen, prefetchNeighbors, showScene, startFinales, startSprite]
+    [ensureSceneReady, ensureScreen, prefetchNeighbors, showScene, startFinales, startSprite]
   );
 
   /** Fetch a saved game and enter play (or resume boot for incomplete owner games). */
@@ -563,6 +592,7 @@ export function World({ mode, gameId: routeGameId, initialIdea }: WorldProps) {
 
         const origin = scenesRef.current.get(ORIGIN_ID);
         if (origin) {
+          await ensureSceneReady(origin);
           showScene(origin);
           setPhase("playing");
           startSprite(game.premise, origin, game.spriteUrl);
@@ -584,7 +614,7 @@ export function World({ mode, gameId: routeGameId, initialIdea }: WorldProps) {
         router.push("/");
       }
     },
-    [bootWorld, hydrateLoadedGame, prefetchNeighbors, resetRunState, router, showScene, startFinales, startSprite]
+    [bootWorld, ensureSceneReady, hydrateLoadedGame, prefetchNeighbors, resetRunState, router, showScene, startFinales, startSprite]
   );
 
   /** Create flow step 1: bible + game row, then redirect to `/play/[id]` for boot. */
@@ -651,6 +681,7 @@ export function World({ mode, gameId: routeGameId, initialIdea }: WorldProps) {
         const parent = scenesRef.current.get(scene.parentId ?? ORIGIN_ID);
         if (parent) {
           setSpawn(null);
+          await ensureSceneReady(parent, parent.title);
           showScene(parent);
         }
         return;
@@ -692,6 +723,7 @@ export function World({ mode, gameId: routeGameId, initialIdea }: WorldProps) {
           const parent = scenesRef.current.get(scene.parentId ?? ORIGIN_ID);
           if (parent) {
             setSpawn(null);
+            await ensureSceneReady(parent, parent.title);
             showScene(parent);
             return;
           }
@@ -732,6 +764,7 @@ export function World({ mode, gameId: routeGameId, initialIdea }: WorldProps) {
           }
           if (interior) {
             setSpawn(null);
+            await ensureSceneReady(interior);
             showScene(interior);
           }
         } catch {
@@ -742,7 +775,7 @@ export function World({ mode, gameId: routeGameId, initialIdea }: WorldProps) {
         }
       }
     },
-    [premise, scene, bible, prefetchInterior, showScene, speak, stopVoice]
+    [bible, ensureSceneReady, prefetchInterior, premise, scene, showScene, speak, stopVoice]
   );
 
   /** Walking off an open edge — generates for owners, walls for visitors without a neighbor. */
@@ -754,6 +787,7 @@ export function World({ mode, gameId: routeGameId, initialIdea }: WorldProps) {
       const ny = scene.coord.y + dy;
       const neighborId = `s${nx}_${ny}`;
       let next = scenesRef.current.get(neighborId) ?? null;
+      const fromCache = Boolean(next);
       if (!next) {
         if (!canGenerateRef.current) return;
         setWandering(word);
@@ -768,10 +802,11 @@ export function World({ mode, gameId: routeGameId, initialIdea }: WorldProps) {
         }
       }
       setSpawn(arriveAt);
+      await ensureSceneReady(next, fromCache ? `Heading ${word}` : undefined);
       showScene(next);
       prefetchNeighbors(bible, next);
     },
-    [bible, scene, ensureScreen, prefetchNeighbors, showScene]
+    [bible, ensureSceneReady, ensureScreen, prefetchNeighbors, scene, showScene]
   );
 
   const onSay = useCallback(
@@ -938,7 +973,7 @@ export function World({ mode, gameId: routeGameId, initialIdea }: WorldProps) {
       <GameCanvas
         scene={scene}
         sprite={sprite}
-        paused={dialogue !== null || entering !== null || wandering !== null}
+        paused={dialogue !== null || entering !== null || wandering !== null || assetLoading !== null}
         onInteract={onInteract}
         spawn={spawn}
         onExitEdge={onExitEdge}
@@ -1097,6 +1132,25 @@ export function World({ mode, gameId: routeGameId, initialIdea }: WorldProps) {
           </span>
         </div>
       )}
+
+      <AnimatePresence>
+        {assetLoading && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="absolute inset-0 z-20 flex items-center justify-center bg-black/60"
+          >
+            <div className="panel rounded-2xl px-6 py-4 text-center">
+              <p className="font-display text-xl font-bold text-ink">{assetLoading}</p>
+              <p className="mt-1 flex items-center justify-center gap-1.5 text-sm font-medium text-inksoft">
+                <span className="animate-breathe inline-block h-1.5 w-1.5 rounded-full bg-primary" />
+                stepping through…
+              </p>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       <AnimatePresence>
         {wandering && (

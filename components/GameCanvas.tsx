@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef } from "react";
 import type { Hotspot, SceneData } from "@/lib/universe";
+import { getCachedImage, preloadImage } from "@/lib/image-cache";
 
 const SPEED_X = 26; // % of width per second
 const SPEED_Y = 20; // % of height per second
@@ -57,33 +58,41 @@ export function GameCanvas({
   // (Re)load the backdrop when the scene changes; spawn on walkable ground.
   // crossOrigin is required for Supabase Storage URLs used in the canvas loop.
   useEffect(() => {
-    const img = new Image();
-    if (scene.image.startsWith("http://") || scene.image.startsWith("https://")) {
-      img.crossOrigin = "anonymous";
-    }
-    img.src = scene.image;
-    img.onload = () => {
-      imgRef.current = img;
+    let cancelled = false;
+
+    const applyBackdrop = (img: HTMLImageElement) => {
+      if (!cancelled) imgRef.current = img;
     };
+
+    const cached = getCachedImage(scene.image);
+    if (cached) {
+      applyBackdrop(cached);
+    } else {
+      preloadImage(scene.image).then(applyBackdrop).catch(() => {});
+    }
+
     visionRef.current = null;
     if (scene.annotated) {
-      const vis = new Image();
-      if (
-        scene.annotated.startsWith("http://") ||
-        scene.annotated.startsWith("https://")
-      ) {
-        vis.crossOrigin = "anonymous";
+      const visCached = getCachedImage(scene.annotated);
+      if (visCached) {
+        visionRef.current = visCached;
+      } else {
+        preloadImage(scene.annotated)
+          .then((vis) => {
+            if (!cancelled) visionRef.current = vis;
+          })
+          .catch(() => {});
       }
-      vis.src = scene.annotated;
-      vis.onload = () => {
-        visionRef.current = vis;
-      };
     }
 
     const startX = spawn?.x ?? (scene.kind === "interior" ? 50 : 14);
     const startY = spawn?.y ?? 72;
     playerRef.current = { x: startX, y: startY, dir: 1, moving: false };
     exitFiredRef.current = false;
+
+    return () => {
+      cancelled = true;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- spawn only applies at scene change
   }, [scene.id, scene.image, scene.kind, scene.annotated]);
 
