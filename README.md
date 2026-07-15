@@ -80,6 +80,25 @@ Sign-in supports **Google** and **email magic link**. Configure once:
 After sign-in, PKCE lands on `/auth/callback`, exchanges the code for a
 session cookie, then redirects into the game.
 
+## Database & storage (game persistence)
+
+Run the SQL migration once in the Supabase dashboard (**SQL Editor** → paste
+[`supabase/migrations/0001_games.sql`](supabase/migrations/0001_games.sql)):
+
+- `profiles` — per-user flags (`is_unlimited` bypasses the free creation limit)
+- `games` — bible, premise, sprite/finale URLs, thumbnail
+- `game_scenes` — saved overworld + interior frames
+- `game-assets` Storage bucket (public read via URL; no broad Storage API listing)
+
+After your first sign-in, grant yourself unlimited generation:
+
+```sql
+update public.profiles set is_unlimited = true where id = '<your-auth-user-uuid>';
+```
+
+Set `FREE_GAME_LIMIT=0` in `.env.local` to disable new world creation for
+free users (gallery-only mode).
+
 ## Impact in India
 
 Kahani ("story") turns any Indian setting — a Chandni Chowk gali, Kerala
@@ -98,8 +117,10 @@ art drops from lakhs to paise.
 | `lib/supabase/*` | browser/server/proxy Supabase clients + `requireUser()` |
 | `proxy.ts` | session refresh; redirect unauthenticated users to `/login` |
 | `app/login` · `app/auth/callback` | Google / magic-link sign-in |
-| `app/api/*` | `universe` · `scene` · `sprite` · `dialogue` · `voice` · `finale` (auth-gated) |
-| `components/World.tsx` | orchestrator: scene cache, parallel prefetch, clues, finale |
+| `app/api/games/*` · `app/api/profile` | saved worlds REST API + creation quota |
+| `app/play/[gameId]` · `app/play/new` | load or create a world |
+| `components/Home.tsx` | gallery-forward landing + create entry |
+| `components/World.tsx` | orchestrator: scene cache, parallel prefetch, clues, finale, persistence |
 | `components/GameCanvas.tsx` | canvas loop: movement, collision, hotspots, sprite |
 | `components/DialogueBox.tsx` | voiced NPC conversations |
 | `docs/` | PRD, design brief, game design |

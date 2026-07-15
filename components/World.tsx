@@ -1,6 +1,15 @@
 "use client";
 
+/**
+ * Explorable world orchestrator: generation, persistence, load/resume, and play.
+ *
+ * - **Create mode** (`/play/new`): bible → game row → boot → incremental saves.
+ * - **Load mode** (`/play/[id]`): hydrate from Storage; owners may still generate.
+ * - **Visitors**: finite world — edges without saved neighbors act as walls.
+ */
+
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   Compass,
@@ -13,7 +22,16 @@ import {
   VolumeX,
   Zap,
 } from "lucide-react";
-import type { Premise } from "@/lib/types";
+import type {
+  CreateGameResponse,
+  FinaleData,
+  FinaleOutcome,
+  FullGameResponse,
+  Premise,
+  WorldDialogueState,
+  WorldPhase,
+  WorldProps,
+} from "@/lib/types/client";
 import type {
   DialogueResponse,
   DialogueTurn,
@@ -21,18 +39,10 @@ import type {
   Hotspot,
   SceneData,
 } from "@/lib/universe";
-import { Landing } from "./Landing";
 import { GameCanvas, type ExitDirection } from "./GameCanvas";
 import { DialogueBox } from "./DialogueBox";
 
-type Phase = "select" | "booting" | "playing";
-
-type FinaleData = {
-  title: string;
-  resolution: string;
-  image: string;
-  outcome?: "victory" | "defeat";
-};
+export type { WorldProps };
 
 /** Heat drawn by a dialogue misstep, judged by the NPC referee. */
 const OFFENSE_HEAT = { none: 0, minor: 12, grave: 35 } as const;
@@ -50,22 +60,37 @@ const EDGE_META: Record<
 
 const ORIGIN_ID = "s0_0";
 
+/** Default opening dialogue options when approaching an NPC. */
 const OPENING_OPTIONS = [
   "Who are you, really?",
   "Something's wrong here. Talk.",
   "I need your help.",
 ];
 
-/** Style direction handed to TTS so lines are performed, not read. */
+/** TTS performance hint derived from NPC role and mood. */
 function voiceStyle(npc: { role?: string } | null, mood?: string): string {
   const m = mood ? `in a ${mood} tone` : "with dramatic feeling";
   return `As a ${npc?.role ?? "character"} in an Indian adventure story, say this ${m}`;
 }
 
-/** Turn a white-background sprite render into a transparent-canvas sprite. */
-async function chromaKeySprite(dataUrl: string): Promise<HTMLCanvasElement> {
+/** True when the value is an inline `data:` URL from live generation. */
+function isDataUrl(value: string): boolean {
+  return value.startsWith("data:");
+}
+
+/** True when the value is a remote URL (e.g. Supabase Storage). */
+function isRemoteUrl(value: string): boolean {
+  return value.startsWith("http://") || value.startsWith("https://");
+}
+
+/**
+ * Turn a white-background sprite into a transparent canvas for the game loop.
+ * Sets `crossOrigin` for Storage URLs so pixel data can be read.
+ */
+async function chromaKeySprite(src: string): Promise<HTMLCanvasElement> {
   const img = new Image();
-  img.src = dataUrl;
+  if (isRemoteUrl(src)) img.crossOrigin = "anonymous";
+  img.src = src;
   await new Promise<void>((res, rej) => {
     img.onload = () => res();
     img.onerror = () => rej(new Error("sprite load failed"));
@@ -81,7 +106,6 @@ async function chromaKeySprite(dataUrl: string): Promise<HTMLCanvasElement> {
     const r = px[i];
     const g = px[i + 1];
     const b = px[i + 2];
-    // near-white → transparent; softly feather off-whites
     if (r > 232 && g > 232 && b > 232) {
       px[i + 3] = 0;
     } else if (r > 215 && g > 215 && b > 215) {
@@ -92,96 +116,156 @@ async function chromaKeySprite(dataUrl: string): Promise<HTMLCanvasElement> {
   return c;
 }
 
-async function post<T>(url: string, body: unknown): Promise<T> {
-  const res = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
+async function request<T>(
+  url: string,
+  init?: RequestInit
+): Promise<T> {
+  const res = await fetch(url, init);
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.error || `Request failed (${res.status}).`);
   return data as T;
 }
 
+/** JSON fetch helper for generation APIs (`POST`). */
+async function post<T>(url: string, body: unknown): Promise<T> {
+  return request<T>(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+/** JSON fetch helper for persistence APIs (`PUT`). */
+async function put<T>(url: string, body: unknown): Promise<T> {
+  return request<T>(url, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+/** Strip the `data:…;base64,` prefix for Gemini continuity payloads. */
 function stripDataUrl(dataUrl: string): string {
   const comma = dataUrl.indexOf(",");
   return comma >= 0 ? dataUrl.slice(comma + 1) : dataUrl;
 }
 
-export function World() {
-  const [phase, setPhase] = useState<Phase>("select");
+/** Build `/api/screen` continuity fields from inline or Storage neighbor images. */
+function prevScreenPayload(prevScene: SceneData | null) {
+  if (!prevScene) return { prevImage: null as string | null, prevImageUrl: null as string | null };
+  if (isDataUrl(prevScene.image)) {
+    return { prevImage: stripDataUrl(prevScene.image), prevImageUrl: null };
+  }
+  return { prevImage: null, prevImageUrl: prevScene.image };
+}
+
+/** Build `/api/sprite` reference frame fields from inline or Storage origin image. */
+function spriteReferencePayload(reference: string | null) {
+  if (!reference) return { referenceFrame: null as string | null, referenceFrameUrl: null as string | null };
+  if (isDataUrl(reference)) {
+    return { referenceFrame: stripDataUrl(reference), referenceFrameUrl: null };
+  }
+  return { referenceFrame: null, referenceFrameUrl: reference };
+}
+
+/** Scan saved street scenes to learn which bible rooms are already placed. */
+function rebuildPlacedRooms(scenes: Iterable<SceneData>): Set<number> {
+  const placed = new Set<number>();
+  for (const s of scenes) {
+    if (s.kind !== "street") continue;
+    for (const h of s.hotspots) {
+      if (h.kind === "building" && typeof h.clueIndex === "number") {
+        placed.add(h.clueIndex);
+      }
+    }
+  }
+  return placed;
+}
+
+/**
+ * Main explorable world component.
+ * @param props.mode - `"create"` starts fresh; `"load"` hydrates a saved game.
+ * @param props.gameId - Required for load mode (`/play/[gameId]`).
+ * @param props.initialIdea - Required for create mode (`/play/new?idea=…`).
+ */
+export function World({ mode, gameId: routeGameId, initialIdea }: WorldProps) {
+  const router = useRouter();
+  /** Persisted game id — set after `POST /api/games` or on load. */
+  const gameIdRef = useRef<string | null>(routeGameId ?? null);
+  /** Owners may generate new scenes; visitors replay the finite saved world. */
+  const canGenerateRef = useRef(mode === "create");
+  /** Pre-saved finales from Storage (used on replay without regeneration). */
+  const savedFinalesRef = useRef<Partial<Record<FinaleOutcome, FinaleData>>>({});
+  const bootStartedRef = useRef(false);
+  const createStartedRef = useRef(false);
+
+  const [phase, setPhase] = useState<WorldPhase>("booting");
   const [premise, setPremise] = useState<Premise | null>(null);
   const [scene, setScene] = useState<SceneData | null>(null);
   const [questHook, setQuestHook] = useState("");
   const [bible, setBible] = useState<GameBible | null>(null);
   const [cluesFound, setCluesFound] = useState<boolean[]>([false, false, false]);
-  /** The world's danger meter 0..100 — at 100 the run ends in defeat. */
   const [heat, setHeat] = useState(0);
   const [finale, setFinale] = useState<FinaleData | null>(null);
   const [finaleLoading, setFinaleLoading] = useState(false);
   const [inventory, setInventory] = useState<string[]>([]);
-
-  // The engine made visible: model calls powering this run (text + image +
-  // vision + voice), and how many rooms have pre-built while the player walks.
   const [genCalls, setGenCalls] = useState(0);
   const [interiorsReady, setInteriorsReady] = useState(0);
-  const addCalls = useCallback(
-    (n: number) => setGenCalls((c) => c + n),
-    []
-  );
+  const addCalls = useCallback((n: number) => setGenCalls((c) => c + n), []);
   const [sprite, setSprite] = useState<HTMLCanvasElement | null>(null);
-  const [bootStatus, setBootStatus] = useState("Dreaming up the world…");
+  const [bootStatus, setBootStatus] = useState("Loading your world…");
   const [entering, setEntering] = useState<string | null>(null);
-  /** Set while the next screen of the infinite world is being dreamed. */
   const [wandering, setWandering] = useState<string | null>(null);
-  /** Where to drop the player on the next scene (entering from an edge). */
   const [spawn, setSpawn] = useState<{ x: number; y: number } | null>(null);
-  /** Show the engine's traced frame — the vision pass, made visible. */
   const [showVision, setShowVision] = useState(false);
   const [screensDreamed, setScreensDreamed] = useState(0);
   const [ambient, setAmbient] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [voiceOn, setVoiceOn] = useState(true);
   const [speaking, setSpeaking] = useState(false);
-
-  // Dialogue state
-  const [dialogue, setDialogue] = useState<{
-    npc: SceneData["npc"] & object;
-    history: DialogueTurn[];
-    options: string[];
-    thinking: boolean;
-    mood?: string;
-  } | null>(null);
+  const [dialogue, setDialogue] = useState<WorldDialogueState | null>(null);
 
   const scenesRef = useRef<Map<string, SceneData>>(new Map());
   const interiorPromises = useRef<Map<string, Promise<SceneData>>>(new Map());
-  /** In-flight overworld screens, keyed by scene id (s{x}_{y}). */
   const screenPromises = useRef<Map<string, Promise<SceneData>>>(new Map());
-  /** Bible rooms (0-2) already anchored to a building somewhere. */
   const placedRoomsRef = useRef<Set<number>>(new Set());
-  // Preload caches — everything the player might do next is already made.
   const voiceCache = useRef<Map<string, Promise<string | null>>>(new Map());
   const dialogueCache = useRef<Map<string, Promise<DialogueResponse>>>(new Map());
   const finalePromise = useRef<Promise<FinaleData | null> | null>(null);
+  const defeatFinalePromise = useRef<Promise<FinaleData | null> | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const voiceOnRef = useRef(voiceOn);
   voiceOnRef.current = voiceOn;
 
-  /* ---------------- voice (cached + performed) ---------------- */
+  /** Fire-and-forget persist of a generated scene to Storage + Postgres. */
+  const saveScene = useCallback((s: SceneData) => {
+    const id = gameIdRef.current;
+    if (!id || !canGenerateRef.current) return;
+    put(`/api/games/${id}/scenes/${s.id}`, s).catch(() => {});
+  }, []);
+
+  /** Fire-and-forget persist of the raw sprite render (before chroma-key). */
+  const saveSprite = useCallback((dataUrl: string) => {
+    const id = gameIdRef.current;
+    if (!id || !canGenerateRef.current) return;
+    put(`/api/games/${id}/sprite`, { sprite: dataUrl }).catch(() => {});
+  }, []);
+
+  /** Fire-and-forget persist of a generated finale image + copy. */
+  const saveFinale = useCallback((outcome: FinaleOutcome, f: FinaleData) => {
+    const id = gameIdRef.current;
+    if (!id || !canGenerateRef.current) return;
+    put(`/api/games/${id}/finales/${outcome}`, f).catch(() => {});
+  }, []);
 
   const fetchVoice = useCallback(
     (text: string, voice?: string, style?: string): Promise<string | null> => {
       const key = `${voice ?? ""}|${style ?? ""}|${text}`;
       const hit = voiceCache.current.get(key);
       if (hit) return hit;
-      const p = post<{ audio: string | null }>("/api/voice", {
-        text,
-        voice,
-        style,
-      })
+      const p = post<{ audio: string | null }>("/api/voice", { text, voice, style })
         .then(({ audio }) => {
           addCalls(1);
-          // Don't pin a transient TTS failure — let a later call retry.
           if (!audio) voiceCache.current.delete(key);
           return audio;
         })
@@ -216,8 +300,6 @@ export function World() {
     setSpeaking(false);
   }, []);
 
-  /* ---------------- scene helpers ---------------- */
-
   const showScene = useCallback((s: SceneData) => {
     scenesRef.current.set(s.id, s);
     setScene(s);
@@ -225,17 +307,11 @@ export function World() {
     setTimeout(() => setAmbient((a) => (a === s.ambient ? null : a)), 5000);
   }, []);
 
-  /**
-   * The moment an interior exists, pre-make the player's entire next minute:
-   * the NPC's opening line as spoken audio, plus the NPC's reply to EVERY
-   * one of the three opening choices — and the audio for those replies too.
-   * Walking in and talking is then instant end to end.
-   */
   const prefetchConversation = useCallback(
     (theBible: GameBible, s: SceneData) => {
+      if (!canGenerateRef.current) return;
       const npc = s.npc;
       if (!npc || typeof s.clueIndex !== "number") return;
-      // opening line, performed
       fetchVoice(npc.opening, npc.voice, voiceStyle(npc, "wary"));
       for (const option of OPENING_OPTIONS) {
         const key = `${s.id}|${option}`;
@@ -264,6 +340,10 @@ export function World() {
     (theBible: GameBible, h: Hotspot, parentId: string) => {
       if (typeof h.clueIndex !== "number") return;
       const roomKey = `room${h.clueIndex}`;
+      const interiorId = `b${h.clueIndex}`;
+      const cached = scenesRef.current.get(interiorId);
+      if (cached) return;
+      if (!canGenerateRef.current) return;
       if (interiorPromises.current.has(roomKey)) return;
       const p = post<{ scene: SceneData }>("/api/scene", {
         bible: theBible,
@@ -271,22 +351,21 @@ export function World() {
         parentId,
       }).then(({ scene: s }) => {
         scenesRef.current.set(s.id, s);
-        addCalls(2); // interior = layout text + image
+        addCalls(2);
         setInteriorsReady((r) => r + 1);
+        saveScene(s);
         prefetchConversation(theBible, s);
         return s;
       });
       p.catch(() => interiorPromises.current.delete(roomKey));
       interiorPromises.current.set(roomKey, p);
     },
-    [addCalls, prefetchConversation]
+    [addCalls, prefetchConversation, saveScene]
   );
 
-  /* ---------------- the infinite loop, client side ---------------- */
-
   /**
-   * Get-or-dream the screen at (x,y): paint → trace → read. Registers any
-   * bible room the vision pass anchored here and pre-builds its interior.
+   * Get-or-dream the screen at (x,y). Non-owners only receive cached scenes.
+   * Saves to Storage after each successful generation.
    */
   const ensureScreen = useCallback(
     (
@@ -299,23 +378,25 @@ export function World() {
       const id = `s${x}_${y}`;
       const cached = scenesRef.current.get(id);
       if (cached) return Promise.resolve(cached);
+      if (!canGenerateRef.current) {
+        return Promise.reject(new Error("The path ends here."));
+      }
       const pending = screenPromises.current.get(id);
       if (pending) return pending;
 
-      const unplacedRooms = [0, 1, 2].filter(
-        (i) => !placedRoomsRef.current.has(i)
-      );
+      const unplacedRooms = [0, 1, 2].filter((i) => !placedRoomsRef.current.has(i));
       const p = post<{ scene: SceneData }>("/api/screen", {
         bible: theBible,
         x,
         y,
         arriveFrom,
-        prevImage: prevScene ? stripDataUrl(prevScene.image) : null,
+        ...prevScreenPayload(prevScene),
         unplacedRooms,
       }).then(({ scene: s }) => {
         scenesRef.current.set(s.id, s);
-        addCalls(3); // frame + trace + vision
+        addCalls(3);
         setScreensDreamed((n) => n + 1);
+        saveScene(s);
         for (const h of s.hotspots) {
           if (h.kind === "building" && typeof h.clueIndex === "number") {
             placedRoomsRef.current.add(h.clueIndex);
@@ -328,64 +409,195 @@ export function World() {
       screenPromises.current.set(id, p);
       return p;
     },
-    [addCalls, prefetchInterior]
+    [addCalls, prefetchInterior, saveScene]
   );
 
-  /** Pre-dream every open neighbor of a screen while the player explores it. */
   const prefetchNeighbors = useCallback(
     (theBible: GameBible, s: SceneData) => {
-      if (!s.coord || !s.edges) return;
+      if (!canGenerateRef.current || !s.coord || !s.edges) return;
       (Object.keys(EDGE_META) as ExitDirection[]).forEach((dir) => {
         if (!s.edges![dir]) return;
         const { dx, dy } = EDGE_META[dir];
-        ensureScreen(theBible, s.coord!.x + dx, s.coord!.y + dy, dir, s).catch(
-          () => {}
-        );
+        ensureScreen(theBible, s.coord!.x + dx, s.coord!.y + dy, dir, s).catch(() => {});
       });
     },
     [ensureScreen]
   );
 
-  /* ---------------- boot ---------------- */
+  const resetRunState = useCallback(() => {
+    scenesRef.current = new Map();
+    interiorPromises.current = new Map();
+    screenPromises.current = new Map();
+    placedRoomsRef.current = new Set();
+    voiceCache.current = new Map();
+    dialogueCache.current = new Map();
+    finalePromise.current = null;
+    defeatFinalePromise.current = null;
+    savedFinalesRef.current = {};
+    setScene(null);
+    setSprite(null);
+    setDialogue(null);
+    setPremise(null);
+    setBible(null);
+    setCluesFound([false, false, false]);
+    setHeat(0);
+    setFinale(null);
+    setFinaleLoading(false);
+    setGenCalls(0);
+    setInteriorsReady(0);
+    setInventory([]);
+    setWandering(null);
+    setSpawn(null);
+    setShowVision(false);
+    setScreensDreamed(0);
+  }, []);
 
-  const begin = useCallback(
-    async (idea: string) => {
+  /** Populate refs and state from `GET /api/games/[id]`. */
+  const hydrateLoadedGame = useCallback((game: FullGameResponse) => {
+    gameIdRef.current = game.id;
+    canGenerateRef.current = game.isOwner;
+    savedFinalesRef.current = game.finales;
+    setPremise(game.premise);
+    setBible(game.bible);
+    setQuestHook(game.bible.story.goal);
+
+    const map = new Map<string, SceneData>();
+    for (const s of game.scenes) map.set(s.id, s);
+    scenesRef.current = map;
+    placedRoomsRef.current = rebuildPlacedRooms(game.scenes);
+
+    const streetCount = game.scenes.filter((s) => s.kind === "street").length;
+    const interiorCount = game.scenes.filter((s) => s.kind === "interior").length;
+    setScreensDreamed(streetCount);
+    setInteriorsReady(interiorCount);
+
+    if (game.finales.victory) {
+      finalePromise.current = Promise.resolve(game.finales.victory);
+    }
+    if (game.finales.defeat) {
+      defeatFinalePromise.current = Promise.resolve(game.finales.defeat);
+    }
+  }, []);
+
+  const startSprite = useCallback(
+    (chosen: Premise, origin: SceneData, existingUrl: string | null) => {
+      if (existingUrl) {
+        chromaKeySprite(existingUrl).then(setSprite).catch(() => {});
+        return;
+      }
+      if (!canGenerateRef.current) return;
+      post<{ sprite: string }>("/api/sprite", {
+        premise: chosen,
+        ...spriteReferencePayload(origin.image),
+      })
+        .then(({ sprite: raw }) => {
+          addCalls(1);
+          saveSprite(raw);
+          return chromaKeySprite(raw);
+        })
+        .then(setSprite)
+        .catch(() => {});
+    },
+    [addCalls, saveSprite]
+  );
+
+  const startFinales = useCallback(
+    (theBible: GameBible) => {
+      if (!canGenerateRef.current) return;
+      if (!savedFinalesRef.current.victory) {
+        finalePromise.current = post<{ finale: FinaleData }>("/api/finale", {
+          bible: theBible,
+          outcome: "victory",
+        })
+          .then(({ finale: f }) => {
+            addCalls(2);
+            saveFinale("victory", f);
+            fetchVoice(f.resolution, "Charon", "As a storyteller closing a mystery, say this with slow gravity");
+            return f;
+          })
+          .catch(() => null);
+      }
+      if (!savedFinalesRef.current.defeat) {
+        defeatFinalePromise.current = post<{ finale: FinaleData }>("/api/finale", {
+          bible: theBible,
+          outcome: "defeat",
+        })
+          .then(({ finale: f }) => {
+            addCalls(2);
+            saveFinale("defeat", f);
+            return f;
+          })
+          .catch(() => null);
+      }
+    },
+    [addCalls, fetchVoice, saveFinale]
+  );
+
+  /** Paint origin, sprite, neighbors, and finales for a newly created game row. */
+  const bootWorld = useCallback(
+    async (theBible: GameBible, chosen: Premise, spriteUrl: string | null) => {
+      setBootStatus("Painting the first screen… then teaching the engine to see it…");
+      const origin =
+        scenesRef.current.get(ORIGIN_ID) ??
+        (await ensureScreen(theBible, 0, 0, null, null));
+      setSpawn(null);
+      showScene(origin);
+      setPhase("playing");
+      startSprite(chosen, origin, spriteUrl);
+      prefetchNeighbors(theBible, origin);
+      startFinales(theBible);
+    },
+    [ensureScreen, prefetchNeighbors, showScene, startFinales, startSprite]
+  );
+
+  /** Fetch a saved game and enter play (or resume boot for incomplete owner games). */
+  const loadGame = useCallback(
+    async (id: string) => {
+      resetRunState();
       setPhase("booting");
       setError(null);
-      setScene(null);
-      setSprite(null);
-      setDialogue(null);
-      setPremise(null);
-      scenesRef.current = new Map();
-      interiorPromises.current = new Map();
-      screenPromises.current = new Map();
-      placedRoomsRef.current = new Set();
-      voiceCache.current = new Map();
-      dialogueCache.current = new Map();
-      finalePromise.current = null;
-      setWandering(null);
-      setSpawn(null);
-      setShowVision(false);
-      setScreensDreamed(0);
+      setBootStatus("Loading your world…");
+      try {
+        const game = await request<FullGameResponse>(`/api/games/${id}`);
+        hydrateLoadedGame(game);
 
-      setBible(null);
-      setCluesFound([false, false, false]);
-      setHeat(0);
-      setFinale(null);
-      setFinaleLoading(false);
-      setGenCalls(0);
-      setInteriorsReady(0);
-      setInventory([]);
+        const origin = scenesRef.current.get(ORIGIN_ID);
+        if (origin) {
+          showScene(origin);
+          setPhase("playing");
+          startSprite(game.premise, origin, game.spriteUrl);
+          if (game.isOwner) {
+            prefetchNeighbors(game.bible, origin);
+            startFinales(game.bible);
+          }
+          return;
+        }
+
+        if (game.isOwner) {
+          await bootWorld(game.bible, game.premise, game.spriteUrl);
+          return;
+        }
+
+        throw new Error("This world has not been built yet.");
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "Failed to load world.");
+        router.push("/");
+      }
+    },
+    [bootWorld, hydrateLoadedGame, prefetchNeighbors, resetRunState, router, showScene, startFinales, startSprite]
+  );
+
+  /** Create flow step 1: bible + game row, then redirect to `/play/[id]` for boot. */
+  const beginCreate = useCallback(
+    async (idea: string) => {
+      resetRunState();
+      setPhase("booting");
+      setError(null);
+      setBootStatus("Writing your game's bible…");
+      canGenerateRef.current = true;
 
       try {
-        // 1) The planner authors the COMPLETE game bible from the player's
-        //    idea: universe, story spine, every room, every NPC, fail states.
-        //    Every later model call referees against this one document.
-        setBootStatus("Writing your game's bible…");
-        const { bible: theBible } = await post<{ bible: GameBible }>(
-          "/api/universe",
-          { idea }
-        );
+        const { bible: theBible } = await post<{ bible: GameBible }>("/api/universe", { idea });
         const chosen: Premise = {
           id: "custom",
           title: theBible.title,
@@ -398,61 +610,36 @@ export function World() {
           goalEmoji: "",
           clockLabel: "",
         };
-        setPremise(chosen);
-        setBible(theBible);
-        addCalls(1); // the game bible
+        addCalls(1);
 
-        // 2) The first turn of the infinite loop: paint screen (0,0), have
-        //    the model trace borders over its own frame, read both images
-        //    into hotspots and open edges.
-        setBootStatus("Painting the first screen… then teaching the engine to see it…");
-        const origin = await ensureScreen(theBible, 0, 0, null, null);
-        setQuestHook(theBible.story.goal);
-        setSpawn(null);
-        showScene(origin);
-        setPhase("playing");
-
-        // 3) Forge the character FROM the first frame, so the sprite shares
-        //    the world's exact art style and lighting (a marker stands in
-        //    until it lands).
-        post<{ sprite: string }>("/api/sprite", {
-          premise: chosen,
-          referenceFrame: stripDataUrl(origin.image),
-        })
-          .then(({ sprite: s }) => {
-            addCalls(1); // character render
-            return chromaKeySprite(s);
-          })
-          .then(setSprite)
-          .catch(() => {});
-
-        // 4) Pre-dream the neighboring screens while the player explores.
-        //    (Interiors pre-build the moment a screen anchors a bible room —
-        //    that happens inside ensureScreen.)
-        prefetchNeighbors(theBible, origin);
-
-        // 5) Pre-generate the VICTORY finale too — the ending is already
-        //    written in the bible, so "Unravel the truth" can land instantly.
-        //    (A defeat finale is generated live if the run sours.)
-        finalePromise.current = post<{ finale: FinaleData }>("/api/finale", {
+        const created = await post<CreateGameResponse>("/api/games", {
+          idea,
           bible: theBible,
-          outcome: "victory",
-        })
-          .then(({ finale: f }) => {
-            addCalls(2);
-            fetchVoice(f.resolution, "Charon", "As a storyteller closing a mystery, say this with slow gravity");
-            return f;
-          })
-          .catch(() => null);
+          premise: chosen,
+        });
+        gameIdRef.current = created.id;
+        router.replace(`/play/${created.id}`);
       } catch (e) {
         setError(e instanceof Error ? e.message : "World generation failed.");
-        setPhase("select");
+        router.push("/");
       }
     },
-    [ensureScreen, prefetchNeighbors, showScene, addCalls, fetchVoice]
+    [addCalls, resetRunState, router]
   );
 
-  /* ---------------- interaction ---------------- */
+  useEffect(() => {
+    if (mode === "load" && routeGameId && !bootStartedRef.current) {
+      bootStartedRef.current = true;
+      loadGame(routeGameId);
+    }
+  }, [mode, routeGameId, loadGame]);
+
+  useEffect(() => {
+    if (mode === "create" && initialIdea && !createStartedRef.current) {
+      createStartedRef.current = true;
+      beginCreate(initialIdea);
+    }
+  }, [mode, initialIdea, beginCreate]);
 
   const onInteract = useCallback(
     async (h: Hotspot) => {
@@ -470,10 +657,7 @@ export function World() {
       }
 
       if (h.kind === "item" && h.itemName) {
-        setInventory((inv) =>
-          inv.includes(h.itemName!) ? inv : [...inv, h.itemName!]
-        );
-        // consume the hotspot from this scene
+        setInventory((inv) => (inv.includes(h.itemName!) ? inv : [...inv, h.itemName!]));
         const updated = {
           ...scene,
           hotspots: scene.hotspots.filter((x) => x.id !== h.id),
@@ -490,7 +674,6 @@ export function World() {
           const item = h.grantsItem;
           setInventory((inv) => (inv.includes(item) ? inv : [...inv, item]));
         }
-        // Risky actions were authored risky in the bible — they draw heat.
         const drawn = h.suspicion ?? 0;
         if (drawn > 0) setHeat((v) => Math.min(100, v + drawn));
         const outcomeLine = h.outcome
@@ -498,11 +681,8 @@ export function World() {
             ? `${h.outcome} (+ ${h.grantsItem})`
             : h.outcome
           : `${h.name} — done.`;
-        setAmbient(
-          drawn > 0 && h.risk ? `${outcomeLine} — ${h.risk}` : outcomeLine
-        );
+        setAmbient(drawn > 0 && h.risk ? `${outcomeLine} — ${h.risk}` : outcomeLine);
         setTimeout(() => setAmbient(null), 4500);
-        // one-shot: consume the action
         const updated = {
           ...scene,
           hotspots: scene.hotspots.filter((x) => x.id !== h.id),
@@ -533,7 +713,6 @@ export function World() {
       }
 
       if (h.kind === "building" && bible) {
-        // Flavor buildings exist in the picture but hold no bible room.
         if (typeof h.clueIndex !== "number") {
           setAmbient(`${h.name} — the door is bolted shut.`);
           setTimeout(() => setAmbient(null), 3000);
@@ -543,6 +722,11 @@ export function World() {
         try {
           let interior = scenesRef.current.get(`b${h.clueIndex}`);
           if (!interior) {
+            if (!canGenerateRef.current) {
+              setAmbient(`${h.name} — the door won't budge.`);
+              setTimeout(() => setAmbient(null), 3000);
+              return;
+            }
             prefetchInterior(bible, h, scene.id);
             interior = await interiorPromises.current.get(`room${h.clueIndex}`);
           }
@@ -561,15 +745,17 @@ export function World() {
     [premise, scene, bible, prefetchInterior, showScene, speak, stopVoice]
   );
 
-  /** Walking off an open edge — the infinite loop, triggered by the feet. */
+  /** Walking off an open edge — generates for owners, walls for visitors without a neighbor. */
   const onExitEdge = useCallback(
     async (dir: ExitDirection) => {
       if (!bible || !scene?.coord) return;
       const { dx, dy, spawn: arriveAt, word } = EDGE_META[dir];
       const nx = scene.coord.x + dx;
       const ny = scene.coord.y + dy;
-      let next = scenesRef.current.get(`s${nx}_${ny}`) ?? null;
+      const neighborId = `s${nx}_${ny}`;
+      let next = scenesRef.current.get(neighborId) ?? null;
       if (!next) {
+        if (!canGenerateRef.current) return;
         setWandering(word);
         try {
           next = await ensureScreen(bible, nx, ny, dir, scene);
@@ -591,20 +777,13 @@ export function World() {
   const onSay = useCallback(
     async (line: string) => {
       if (!bible || !scene?.npc || !dialogue) return;
-      const history: DialogueTurn[] = [
-        ...dialogue.history,
-        { speaker: "player", text: line },
-      ];
+      const history: DialogueTurn[] = [...dialogue.history, { speaker: "player", text: line }];
       setDialogue({ ...dialogue, history, options: [], thinking: true });
       const clueIndex = scene.clueIndex;
       const hasClue = typeof clueIndex === "number";
       if (!hasClue) return;
       try {
-        // First exchange with a canned opener? The reply (and its audio) were
-        // pre-generated the moment this room finished building — instant.
-        // (Skip the cache once heat is high: the NPC's wariness must show.)
-        const isFirstTurn =
-          history.filter((t) => t.speaker === "player").length === 1;
+        const isFirstTurn = history.filter((t) => t.speaker === "player").length === 1;
         const cached =
           isFirstTurn && heat < 60
             ? dialogueCache.current.get(`${scene.id}|${line}`)
@@ -623,9 +802,8 @@ export function World() {
             inventory,
             heat,
           });
-          addCalls(1); // dialogue turn
+          addCalls(1);
         }
-        // The referee's verdict on the player's line: mistakes draw heat.
         const offense = reply.offense ?? "none";
         if (offense !== "none") {
           setHeat((v) => Math.min(100, v + OFFENSE_HEAT[offense]));
@@ -679,12 +857,14 @@ export function World() {
       setDialogue(null);
       setFinaleLoading(true);
       try {
-        // Victory was pre-generated at boot; defeat is always a live call.
-        let f =
-          outcome === "victory" && finalePromise.current
-            ? await finalePromise.current
-            : null;
-        if (!f) {
+        let f: FinaleData | null = savedFinalesRef.current[outcome] ?? null;
+        if (!f && outcome === "victory" && finalePromise.current) {
+          f = await finalePromise.current;
+        }
+        if (!f && outcome === "defeat" && defeatFinalePromise.current) {
+          f = await defeatFinalePromise.current;
+        }
+        if (!f && canGenerateRef.current) {
           const res = await post<{ finale: FinaleData }>("/api/finale", {
             bible,
             outcome,
@@ -692,7 +872,9 @@ export function World() {
           });
           f = res.finale;
           addCalls(2);
+          saveFinale(outcome, f);
         }
+        if (!f) throw new Error("Finale unavailable.");
         setFinale({ ...f, outcome: f.outcome ?? outcome });
         speak(
           f.resolution,
@@ -708,10 +890,9 @@ export function World() {
         setFinaleLoading(false);
       }
     },
-    [bible, finale, finaleLoading, speak, stopVoice, addCalls]
+    [bible, finale, finaleLoading, speak, stopVoice, addCalls, saveFinale]
   );
 
-  // The hard fail state: the danger meter maxing out ends the run.
   useEffect(() => {
     if (heat >= 100 && bible && !finale && !finaleLoading) {
       const hard = bible.failStates.find((f) => f.kind === "hard");
@@ -726,53 +907,17 @@ export function World() {
 
   const leaveWorld = useCallback(() => {
     stopVoice();
-    setPhase("select");
-    setPremise(null);
-    setScene(null);
-    setDialogue(null);
-    setBible(null);
-    setHeat(0);
-    setCluesFound([false, false, false]);
-    setFinale(null);
-    setFinaleLoading(false);
-    setGenCalls(0);
-    setInteriorsReady(0);
-    setInventory([]);
-    setWandering(null);
-    setSpawn(null);
-    setShowVision(false);
-    setScreensDreamed(0);
-    voiceCache.current = new Map();
-    dialogueCache.current = new Map();
-    screenPromises.current = new Map();
-    placedRoomsRef.current = new Set();
-    finalePromise.current = null;
-  }, [stopVoice]);
+    router.push("/");
+  }, [stopVoice, router]);
 
-  // Global Esc: close dialogue handled in DialogueBox; nothing else here.
   useEffect(() => stopVoice, [stopVoice]);
-
-  /* ---------------- render ---------------- */
-
-  if (phase === "select") {
-    return (
-      <div>
-        <Landing onStart={begin} />
-        {error && (
-          <p className="pb-8 text-center text-sm font-semibold text-health">
-            {error}
-          </p>
-        )}
-      </div>
-    );
-  }
 
   if (phase === "booting" || !scene || !premise) {
     return (
       <div className="flex min-h-dvh flex-col items-center justify-center px-6">
         <div className="w-full max-w-sm">
           <h2 className="font-display text-3xl font-extrabold text-ink">
-            {premise?.title ?? "Building your world"}
+            {premise?.title ?? bible?.title ?? "Building your world"}
           </h2>
           <div className="mt-5 border-t border-ink/15 pt-4">
             <p className="text-sm font-semibold text-ink">{bootStatus}</p>
@@ -780,6 +925,9 @@ export function World() {
               universe · story · scene · character · interiors · voices — all
               generated live{genCalls > 0 ? ` (${genCalls} calls so far)` : ""}
             </p>
+            {error && (
+              <p className="mt-3 text-sm font-semibold text-health">{error}</p>
+            )}
           </div>
         </div>
       </div>
@@ -798,7 +946,6 @@ export function World() {
         showVision={showVision}
       />
 
-      {/* --- HUD: world / scene / quest / clues --- */}
       <div className="pointer-events-none absolute inset-x-0 top-0 z-10 flex items-start justify-between gap-3 p-4">
         <div className="flex max-w-sm flex-col gap-2">
           <div className="panel rounded-2xl px-4 py-2.5">
@@ -910,7 +1057,6 @@ export function World() {
         </div>
       </div>
 
-      {/* --- Ambient line --- */}
       <AnimatePresence>
         {ambient && (
           <motion.p
@@ -925,14 +1071,12 @@ export function World() {
         )}
       </AnimatePresence>
 
-      {/* --- Controls hint --- */}
       {!dialogue && (
         <div className="pointer-events-none absolute bottom-4 left-1/2 z-10 -translate-x-1/2 rounded-full bg-black/55 px-4 py-2 text-xs font-semibold text-white/90 backdrop-blur-sm">
           WASD / arrows — move · E — enter / talk
         </div>
       )}
 
-      {/* --- The engine, made visible (the NB2 Lite pipeline is the product) --- */}
       {!dialogue && !finale && (
         <div
           className="panel pointer-events-none absolute bottom-4 right-4 z-10 flex items-center gap-2 rounded-lg px-3 py-2"
@@ -955,7 +1099,6 @@ export function World() {
         </div>
       )}
 
-      {/* --- Wandering overlay: the next screen is being dreamed --- */}
       <AnimatePresence>
         {wandering && (
           <motion.div
@@ -977,7 +1120,6 @@ export function World() {
         )}
       </AnimatePresence>
 
-      {/* --- Entering overlay --- */}
       <AnimatePresence>
         {entering && (
           <motion.div
@@ -987,9 +1129,7 @@ export function World() {
             className="absolute inset-0 z-20 flex items-center justify-center bg-black/60"
           >
             <div className="panel rounded-2xl px-6 py-4 text-center">
-              <p className="font-display text-xl font-bold text-ink">
-                {entering}
-              </p>
+              <p className="font-display text-xl font-bold text-ink">{entering}</p>
               <p className="mt-1 flex items-center justify-center gap-1.5 text-sm font-medium text-inksoft">
                 <span className="animate-breathe inline-block h-1.5 w-1.5 rounded-full bg-primary" />
                 stepping inside…
@@ -999,7 +1139,6 @@ export function World() {
         )}
       </AnimatePresence>
 
-      {/* --- Finale --- */}
       <AnimatePresence>
         {finale && (
           <motion.div
@@ -1034,7 +1173,7 @@ export function World() {
                   onClick={leaveWorld}
                   className="mt-8 rounded-full bg-primary px-8 py-3.5 text-sm font-bold text-white shadow-soft transition hover:brightness-105 active:scale-95"
                 >
-                  Tell another story
+                  Back to gallery
                 </button>
               </motion.div>
             </div>
@@ -1042,7 +1181,6 @@ export function World() {
         )}
       </AnimatePresence>
 
-      {/* --- Dialogue --- */}
       <div className="pointer-events-none absolute inset-x-0 bottom-0 z-30 flex justify-center sm:p-4">
         <AnimatePresence>
           {dialogue && scene.npc && (
@@ -1062,7 +1200,6 @@ export function World() {
         </AnimatePresence>
       </div>
 
-      {/* --- Error toast --- */}
       <AnimatePresence>
         {error && phase === "playing" && (
           <motion.p

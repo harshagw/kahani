@@ -1,25 +1,20 @@
+/**
+ * `POST /api/screen` — generate one overworld tile at grid coordinate (x, y).
+ * Supports continuity from either inline base64 or a saved Storage URL.
+ */
+
 import { NextRequest, NextResponse } from "next/server";
+import { fetchImageAsBase64 } from "@/lib/games";
 import { requireUser } from "@/lib/supabase/auth";
-import { generateScreen, type Direction } from "@/lib/world-engine";
-import type { GameBible } from "@/lib/universe";
+import type { ScreenRequest } from "@/lib/types/server";
+import { generateScreen } from "@/lib/world-engine";
 
 export const runtime = "nodejs";
 export const maxDuration = 120;
 
-type ScreenRequest = {
-  bible: GameBible;
-  x: number;
-  y: number;
-  /** Direction the player walked to reach this screen. */
-  arriveFrom?: Direction | null;
-  /** Previous screen's frame (base64, no data-url prefix) for continuity. */
-  prevImage?: string | null;
-  /** Bible rooms (0-2) not yet placed anywhere in the world. */
-  unplacedRooms?: number[];
-};
-
 const DIRS = new Set(["n", "e", "s", "w"]);
 
+/** Paint, trace, and vision-parse the next overworld screen. */
 export async function POST(req: NextRequest) {
   if (!(await requireUser())) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -43,12 +38,17 @@ export async function POST(req: NextRequest) {
     );
   }
   try {
+    // Resume from Storage: fetch the neighbor frame server-side when needed.
+    let prevImage = body.prevImage || null;
+    if (!prevImage && body.prevImageUrl) {
+      prevImage = await fetchImageAsBase64(body.prevImageUrl);
+    }
     const scene = await generateScreen(
       body.bible,
       Math.round(body.x),
       Math.round(body.y),
       body.arriveFrom && DIRS.has(body.arriveFrom) ? body.arriveFrom : null,
-      body.prevImage || null,
+      prevImage,
       (body.unplacedRooms ?? []).filter(
         (r) => Number.isInteger(r) && r >= 0 && r <= 2
       )

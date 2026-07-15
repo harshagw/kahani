@@ -55,8 +55,12 @@ export function GameCanvas({
   }, []);
 
   // (Re)load the backdrop when the scene changes; spawn on walkable ground.
+  // crossOrigin is required for Supabase Storage URLs used in the canvas loop.
   useEffect(() => {
     const img = new Image();
+    if (scene.image.startsWith("http://") || scene.image.startsWith("https://")) {
+      img.crossOrigin = "anonymous";
+    }
     img.src = scene.image;
     img.onload = () => {
       imgRef.current = img;
@@ -64,6 +68,12 @@ export function GameCanvas({
     visionRef.current = null;
     if (scene.annotated) {
       const vis = new Image();
+      if (
+        scene.annotated.startsWith("http://") ||
+        scene.annotated.startsWith("https://")
+      ) {
+        vis.crossOrigin = "anonymous";
+      }
       vis.src = scene.annotated;
       vis.onload = () => {
         visionRef.current = vis;

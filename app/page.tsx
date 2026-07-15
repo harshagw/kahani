@@ -1,5 +1,6 @@
-import { World } from "@/components/World";
+import { Home } from "@/components/Home";
 
-export default function Home() {
-  return <World />;
+/** Post-login landing: gallery, create entry, and owned worlds. */
+export default function Page() {
+  return <Home />;
 }
