@@ -39,6 +39,7 @@ import type {
   Hotspot,
   SceneData,
 } from "@/lib/universe";
+import { GEN_CALL_COST } from "@/lib/constants";
 import { GameCanvas, type ExitDirection } from "./GameCanvas";
 import { DialogueBox } from "./DialogueBox";
 
@@ -186,7 +187,7 @@ function rebuildPlacedRooms(scenes: Iterable<SceneData>): Set<number> {
  * Main explorable world component.
  * @param props.mode - `"create"` starts fresh; `"load"` hydrates a saved game.
  * @param props.gameId - Required for load mode (`/play/[gameId]`).
- * @param props.initialIdea - Required for create mode (`/play/new?idea=…`).
+ * @param props.initialIdea - Required for create mode (from `/play/new` via sessionStorage).
  */
 export function World({ mode, gameId: routeGameId, initialIdea }: WorldProps) {
   const router = useRouter();
@@ -265,7 +266,6 @@ export function World({ mode, gameId: routeGameId, initialIdea }: WorldProps) {
       if (hit) return hit;
       const p = post<{ audio: string | null }>("/api/voice", { text, voice, style })
         .then(({ audio }) => {
-          addCalls(1);
           if (!audio) voiceCache.current.delete(key);
           return audio;
         })
@@ -276,7 +276,7 @@ export function World({ mode, gameId: routeGameId, initialIdea }: WorldProps) {
       voiceCache.current.set(key, p);
       return p;
     },
-    [addCalls]
+    []
   );
 
   const speak = useCallback(
@@ -325,7 +325,6 @@ export function World({ mode, gameId: routeGameId, initialIdea }: WorldProps) {
           exchanges: 1,
           heat: 0,
         }).then((reply) => {
-          addCalls(1);
           fetchVoice(reply.line, npc.voice, voiceStyle(npc, reply.mood));
           return reply;
         });
@@ -333,7 +332,7 @@ export function World({ mode, gameId: routeGameId, initialIdea }: WorldProps) {
         dialogueCache.current.set(key, p);
       }
     },
-    [addCalls, fetchVoice]
+    [fetchVoice]
   );
 
   const prefetchInterior = useCallback(
@@ -351,7 +350,7 @@ export function World({ mode, gameId: routeGameId, initialIdea }: WorldProps) {
         parentId,
       }).then(({ scene: s }) => {
         scenesRef.current.set(s.id, s);
-        addCalls(2);
+        addCalls(GEN_CALL_COST.interior);
         setInteriorsReady((r) => r + 1);
         saveScene(s);
         prefetchConversation(theBible, s);
@@ -394,7 +393,7 @@ export function World({ mode, gameId: routeGameId, initialIdea }: WorldProps) {
         unplacedRooms,
       }).then(({ scene: s }) => {
         scenesRef.current.set(s.id, s);
-        addCalls(3);
+        addCalls(GEN_CALL_COST.screen);
         setScreensDreamed((n) => n + 1);
         saveScene(s);
         for (const h of s.hotspots) {
@@ -470,6 +469,7 @@ export function World({ mode, gameId: routeGameId, initialIdea }: WorldProps) {
     const interiorCount = game.scenes.filter((s) => s.kind === "interior").length;
     setScreensDreamed(streetCount);
     setInteriorsReady(interiorCount);
+    setGenCalls(game.genCalls);
 
     if (game.finales.victory) {
       finalePromise.current = Promise.resolve(game.finales.victory);
@@ -491,7 +491,7 @@ export function World({ mode, gameId: routeGameId, initialIdea }: WorldProps) {
         ...spriteReferencePayload(origin.image),
       })
         .then(({ sprite: raw }) => {
-          addCalls(1);
+          addCalls(GEN_CALL_COST.sprite);
           saveSprite(raw);
           return chromaKeySprite(raw);
         })
@@ -510,7 +510,7 @@ export function World({ mode, gameId: routeGameId, initialIdea }: WorldProps) {
           outcome: "victory",
         })
           .then(({ finale: f }) => {
-            addCalls(2);
+            addCalls(GEN_CALL_COST.finale);
             saveFinale("victory", f);
             fetchVoice(f.resolution, "Charon", "As a storyteller closing a mystery, say this with slow gravity");
             return f;
@@ -523,7 +523,7 @@ export function World({ mode, gameId: routeGameId, initialIdea }: WorldProps) {
           outcome: "defeat",
         })
           .then(({ finale: f }) => {
-            addCalls(2);
+            addCalls(GEN_CALL_COST.finale);
             saveFinale("defeat", f);
             return f;
           })
@@ -610,7 +610,7 @@ export function World({ mode, gameId: routeGameId, initialIdea }: WorldProps) {
           goalEmoji: "",
           clockLabel: "",
         };
-        addCalls(1);
+        addCalls(GEN_CALL_COST.universe);
 
         const created = await post<CreateGameResponse>("/api/games", {
           idea,
@@ -802,7 +802,6 @@ export function World({ mode, gameId: routeGameId, initialIdea }: WorldProps) {
             inventory,
             heat,
           });
-          addCalls(1);
         }
         const offense = reply.offense ?? "none";
         if (offense !== "none") {
@@ -871,7 +870,7 @@ export function World({ mode, gameId: routeGameId, initialIdea }: WorldProps) {
             reason,
           });
           f = res.finale;
-          addCalls(2);
+          addCalls(GEN_CALL_COST.finale);
           saveFinale(outcome, f);
         }
         if (!f) throw new Error("Finale unavailable.");

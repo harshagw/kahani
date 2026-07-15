@@ -8,6 +8,10 @@ import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { ArrowRight, Trash2 } from "lucide-react";
+import {
+  CREATE_IDEA_STORAGE_KEY,
+  MAX_CREATE_IDEA_LENGTH,
+} from "@/lib/constants";
 import { createClient } from "@/lib/supabase/client";
 import type {
   GameListItem,
@@ -67,11 +71,12 @@ export function Home() {
   // Everyone else's worlds — replay loads from storage, no new generation.
   const gallery = userId ? games.filter((g) => g.owner !== userId) : games;
 
-  /** Navigate to create flow; quota is enforced again server-side. */
+  /** Navigate to create flow; idea travels via sessionStorage, not the URL. */
   const startCreate = () => {
     const text = idea.trim();
     if (!text || !quota?.canCreate) return;
-    router.push(`/play/new?idea=${encodeURIComponent(text)}`);
+    sessionStorage.setItem(CREATE_IDEA_STORAGE_KEY, text);
+    router.push("/play/new");
   };
 
   const signOut = async () => {
@@ -149,6 +154,7 @@ export function Home() {
               onKeyDown={(e) => {
                 if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) startCreate();
               }}
+              maxLength={MAX_CREATE_IDEA_LENGTH}
               rows={3}
               placeholder="e.g. A rain-flooded night market in Mumbai. I'm a courier carrying a sealed tiffin box someone will kill for…"
               className="w-full resize-none rounded-xl bg-transparent px-3 py-2.5 text-[15px] font-medium leading-relaxed text-ink outline-none placeholder:text-inksoft/50"

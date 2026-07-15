@@ -117,6 +117,8 @@ export type FullGameResponse = {
   spriteUrl: string | null;
   finales: Partial<Record<FinaleOutcome, FinaleData>>;
   scenes: SceneData[];
+  /** Total AI generation calls derived from persisted assets (same for owner and visitors). */
+  genCalls: number;
   createdAt: string;
 };
 
@@ -150,7 +152,7 @@ export type WorldProps = {
   mode: WorldMode;
   /** Required when `mode` is `"load"`. */
   gameId?: string;
-  /** Required when `mode` is `"create"` (from `/play/new?idea=…`). */
+  /** Required when `mode` is `"create"` (from `/play/new` via sessionStorage). */
   initialIdea?: string;
 };
 

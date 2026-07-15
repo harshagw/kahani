@@ -2,21 +2,32 @@
 
 /**
  * Create entry point: validates quota, then starts live world generation.
- * Redirects to `/` when creation is disabled or over quota.
+ * Idea is read once from sessionStorage (set on Home) — not the URL.
+ * Redirects to `/` when creation is disabled, over quota, or idea is missing.
  */
 
-import { Suspense, useEffect, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { World } from "@/components/World";
+import { CREATE_IDEA_STORAGE_KEY } from "@/lib/constants";
 
-function PlayNewInner() {
+export default function PlayNewPage() {
   const router = useRouter();
-  const searchParams = useSearchParams();
-  const idea = searchParams.get("idea")?.trim() ?? "";
+  const [idea, setIdea] = useState<string | null>(null);
   const [allowed, setAllowed] = useState<boolean | null>(null);
 
   useEffect(() => {
     let cancelled = false;
+
+    const stored = sessionStorage.getItem(CREATE_IDEA_STORAGE_KEY)?.trim() ?? "";
+    sessionStorage.removeItem(CREATE_IDEA_STORAGE_KEY);
+
+    if (!stored) {
+      router.replace("/");
+      return;
+    }
+    setIdea(stored);
+
     (async () => {
       try {
         const res = await fetch("/api/profile");
@@ -26,21 +37,18 @@ function PlayNewInner() {
           router.replace("/");
           return;
         }
-        if (!idea) {
-          router.replace("/");
-          return;
-        }
         setAllowed(true);
       } catch {
         if (!cancelled) router.replace("/");
       }
     })();
+
     return () => {
       cancelled = true;
     };
-  }, [idea, router]);
+  }, [router]);
 
-  if (!allowed || !idea) {
+  if (allowed !== true || !idea) {
     return (
       <div className="flex min-h-dvh items-center justify-center px-6">
         <p className="text-sm font-semibold text-inksoft">Checking your quota…</p>
@@ -49,18 +57,4 @@ function PlayNewInner() {
   }
 
   return <World mode="create" initialIdea={idea} />;
-}
-
-export default function PlayNewPage() {
-  return (
-    <Suspense
-      fallback={
-        <div className="flex min-h-dvh items-center justify-center px-6">
-          <p className="text-sm font-semibold text-inksoft">Loading…</p>
-        </div>
-      }
-    >
-      <PlayNewInner />
-    </Suspense>
-  );
 }

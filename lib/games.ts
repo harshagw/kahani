@@ -3,7 +3,7 @@
  * Postgres row mapping, and quota enforcement.
  */
 
-import { FREE_GAME_LIMIT } from "@/lib/constants";
+import { FREE_GAME_LIMIT, GEN_CALL_COST } from "@/lib/constants";
 import { createClient } from "@/lib/supabase/server";
 import type {
   FullGameResponse,
@@ -20,6 +20,28 @@ import type { SupabaseClient, User } from "@supabase/supabase-js";
 
 /** Public Supabase Storage bucket for generated game assets. */
 export const GAME_ASSETS_BUCKET = "game-assets";
+
+/**
+ * Derive total AI generation calls from persisted assets.
+ * Must stay in sync with `GEN_CALL_COST` and client `addCalls` sites.
+ *
+ * @param game - Parent game row (sprite + finales).
+ * @param scenes - Saved scene rows or client scene list (only `kind` is read).
+ */
+export function computeGenCallsFromAssets(
+  game: Pick<GameRecord, "sprite_url" | "finale">,
+  scenes: Array<Pick<GameSceneRow, "kind">>
+): number {
+  const streetCount = scenes.filter((s) => s.kind === "street").length;
+  const interiorCount = scenes.filter((s) => s.kind === "interior").length;
+  let total = GEN_CALL_COST.universe;
+  total += streetCount * GEN_CALL_COST.screen;
+  total += interiorCount * GEN_CALL_COST.interior;
+  if (game.sprite_url) total += GEN_CALL_COST.sprite;
+  if (game.finale?.victory) total += GEN_CALL_COST.finale;
+  if (game.finale?.defeat) total += GEN_CALL_COST.finale;
+  return total;
+}
 
 /**
  * Map file extension from a MIME type string.
@@ -226,6 +248,7 @@ export async function buildFullGameResponse(
     spriteUrl: game.sprite_url,
     finales: game.finale ?? {},
     scenes: sceneRows.map(rowToScene),
+    genCalls: computeGenCallsFromAssets(game, sceneRows),
     createdAt: game.created_at,
   };
 }
