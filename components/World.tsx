@@ -222,6 +222,14 @@ export function World({ mode, gameId: routeGameId, initialIdea }: WorldProps) {
   const [bootStatus, setBootStatus] = useState("Loading your world…");
   const [entering, setEntering] = useState<string | null>(null);
   const [wandering, setWandering] = useState<string | null>(null);
+  /** Owner confirm before painting an unexplored overworld neighbor. */
+  const [pendingExplore, setPendingExplore] = useState<{
+    dir: ExitDirection;
+    word: string;
+    nx: number;
+    ny: number;
+    arriveAt: { x: number; y: number };
+  } | null>(null);
   /** Brief overlay while a cached scene's Storage image finishes decoding. */
   const [assetLoading, setAssetLoading] = useState<string | null>(null);
   const [spawn, setSpawn] = useState<{ x: number; y: number } | null>(null);
@@ -435,18 +443,6 @@ export function World({ mode, gameId: routeGameId, initialIdea }: WorldProps) {
     [addCalls, prefetchInterior, saveScene]
   );
 
-  const prefetchNeighbors = useCallback(
-    (theBible: GameBible, s: SceneData) => {
-      if (!canGenerateRef.current || !s.coord || !s.edges) return;
-      (Object.keys(EDGE_META) as ExitDirection[]).forEach((dir) => {
-        if (!s.edges![dir]) return;
-        const { dx, dy } = EDGE_META[dir];
-        ensureScreen(theBible, s.coord!.x + dx, s.coord!.y + dy, dir, s).catch(() => {});
-      });
-    },
-    [ensureScreen]
-  );
-
   const resetRunState = useCallback(() => {
     scenesRef.current = new Map();
     interiorPromises.current = new Map();
@@ -470,6 +466,7 @@ export function World({ mode, gameId: routeGameId, initialIdea }: WorldProps) {
     setInteriorsReady(0);
     setInventory([]);
     setWandering(null);
+    setPendingExplore(null);
     setAssetLoading(null);
     setSpawn(null);
     setShowVision(false);
@@ -573,10 +570,9 @@ export function World({ mode, gameId: routeGameId, initialIdea }: WorldProps) {
       showScene(origin);
       setPhase("playing");
       startSprite(chosen, origin, spriteUrl);
-      prefetchNeighbors(theBible, origin);
       startFinales(theBible);
     },
-    [ensureSceneReady, ensureScreen, prefetchNeighbors, showScene, startFinales, startSprite]
+    [ensureSceneReady, ensureScreen, showScene, startFinales, startSprite]
   );
 
   /** Fetch a saved game and enter play (or resume boot for incomplete owner games). */
@@ -597,7 +593,6 @@ export function World({ mode, gameId: routeGameId, initialIdea }: WorldProps) {
           setPhase("playing");
           startSprite(game.premise, origin, game.spriteUrl);
           if (game.isOwner) {
-            prefetchNeighbors(game.bible, origin);
             startFinales(game.bible);
           }
           return;
@@ -614,7 +609,7 @@ export function World({ mode, gameId: routeGameId, initialIdea }: WorldProps) {
         router.push("/");
       }
     },
-    [bootWorld, ensureSceneReady, hydrateLoadedGame, prefetchNeighbors, resetRunState, router, showScene, startFinales, startSprite]
+    [bootWorld, ensureSceneReady, hydrateLoadedGame, resetRunState, router, showScene, startFinales, startSprite]
   );
 
   /** Create flow step 1: bible + game row, then redirect to `/play/[id]` for boot. */
@@ -786,7 +781,7 @@ export function World({ mode, gameId: routeGameId, initialIdea }: WorldProps) {
     [bible, ensureSceneReady, prefetchInterior, premise, scene, showScene, speak, stopVoice]
   );
 
-  /** Walking off an open edge — generates for owners, walls for visitors without a neighbor. */
+  /** Walking off an open edge — confirm before generating; walls for visitors without a neighbor. */
   const onExitEdge = useCallback(
     async (dir: ExitDirection) => {
       if (!bible || !scene?.coord) return;
@@ -794,28 +789,42 @@ export function World({ mode, gameId: routeGameId, initialIdea }: WorldProps) {
       const nx = scene.coord.x + dx;
       const ny = scene.coord.y + dy;
       const neighborId = `s${nx}_${ny}`;
-      let next = scenesRef.current.get(neighborId) ?? null;
-      const fromCache = Boolean(next);
+      const next = scenesRef.current.get(neighborId) ?? null;
       if (!next) {
         if (!canGenerateRef.current) return;
-        setWandering(word);
-        try {
-          next = await ensureScreen(bible, nx, ny, dir, scene);
-        } catch {
-          setError("The path ahead dissolved into mist. Try again.");
-          setTimeout(() => setError(null), 4000);
-          return;
-        } finally {
-          setWandering(null);
-        }
+        setPendingExplore({ dir, word, nx, ny, arriveAt });
+        return;
       }
       setSpawn(arriveAt);
-      await ensureSceneReady(next, fromCache ? `Heading ${word}` : undefined);
+      await ensureSceneReady(next, `Heading ${word}`);
       showScene(next);
-      prefetchNeighbors(bible, next);
     },
-    [bible, ensureSceneReady, ensureScreen, prefetchNeighbors, scene, showScene]
+    [bible, ensureSceneReady, scene, showScene]
   );
+
+  /** Owner accepted painting the unexplored neighbor. */
+  const confirmExplore = useCallback(async () => {
+    const pending = pendingExplore;
+    if (!pending || !bible || !scene) return;
+    setPendingExplore(null);
+    setWandering(pending.word);
+    try {
+      const next = await ensureScreen(bible, pending.nx, pending.ny, pending.dir, scene);
+      setSpawn(pending.arriveAt);
+      await ensureSceneReady(next);
+      showScene(next);
+    } catch {
+      setError("The path ahead dissolved into mist. Try again.");
+      setTimeout(() => setError(null), 4000);
+    } finally {
+      setWandering(null);
+    }
+  }, [bible, ensureSceneReady, ensureScreen, pendingExplore, scene, showScene]);
+
+  /** Owner declined — stay on the current screen. */
+  const cancelExplore = useCallback(() => {
+    setPendingExplore(null);
+  }, []);
 
   const onSay = useCallback(
     async (line: string) => {
@@ -981,7 +990,13 @@ export function World({ mode, gameId: routeGameId, initialIdea }: WorldProps) {
       <GameCanvas
         scene={scene}
         sprite={sprite}
-        paused={dialogue !== null || entering !== null || wandering !== null || assetLoading !== null}
+        paused={
+          dialogue !== null ||
+          entering !== null ||
+          wandering !== null ||
+          pendingExplore !== null ||
+          assetLoading !== null
+        }
         onInteract={onInteract}
         spawn={spawn}
         onExitEdge={onExitEdge}
@@ -1122,7 +1137,7 @@ export function World({ mode, gameId: routeGameId, initialIdea }: WorldProps) {
       {!dialogue && !finale && (
         <div
           className="panel pointer-events-none absolute bottom-4 right-4 z-10 flex items-center gap-2 rounded-lg px-3 py-2"
-          title="Every screen is painted, then the model traces borders over its own frame and reads both images back into the game; neighbors pre-dream while you walk"
+          title="Every screen is painted, then the model traces borders over its own frame and reads both images back into the game"
         >
           <Zap size={11} strokeWidth={2.5} className="text-primary" />
           <span className="text-[11px] font-semibold tabular-nums text-ink">
@@ -1155,6 +1170,40 @@ export function World({ mode, gameId: routeGameId, initialIdea }: WorldProps) {
                 <span className="animate-breathe inline-block h-1.5 w-1.5 rounded-full bg-primary" />
                 stepping through…
               </p>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {pendingExplore && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="absolute inset-0 z-20 flex items-center justify-center bg-black/60"
+          >
+            <div className="panel rounded-2xl px-6 py-5 text-center">
+              <p className="font-display text-xl font-bold text-ink">
+                Explore {pendingExplore.word}?
+              </p>
+              <p className="mt-1 text-sm font-medium text-inksoft">
+                Painting a new screen uses API credits.
+              </p>
+              <div className="mt-5 flex items-center justify-center gap-3">
+                <button
+                  onClick={confirmExplore}
+                  className="rounded-full bg-primary px-6 py-2.5 text-sm font-bold text-white shadow-soft transition hover:brightness-105 active:scale-95"
+                >
+                  Generate
+                </button>
+                <button
+                  onClick={cancelExplore}
+                  className="rounded-full px-6 py-2.5 text-sm font-bold text-inksoft transition hover:text-ink active:scale-95"
+                >
+                  Stay
+                </button>
+              </div>
             </div>
           </motion.div>
         )}
