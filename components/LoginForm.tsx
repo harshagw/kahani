@@ -62,12 +62,12 @@ export function LoginForm() {
   };
 
   return (
-    <div className="mx-auto flex min-h-dvh max-w-md flex-col justify-center px-6 py-14">
-      <motion.div
-        initial={{ opacity: 0, y: 14 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.5, ease: EASE_OUT }}
-      >
+    <motion.div
+      className="mx-auto w-full max-w-md"
+      initial={{ opacity: 0, y: 14 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.5, ease: EASE_OUT }}
+    >
         <p className="mb-6 border-b border-ink/15 pb-3 text-xs font-bold uppercase tracking-widest text-primary">
           Sign in to play
         </p>
@@ -159,8 +159,7 @@ export function LoginForm() {
             </form>
           </div>
         )}
-      </motion.div>
-    </div>
+    </motion.div>
   );
 }
 
