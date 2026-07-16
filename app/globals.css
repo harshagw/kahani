@@ -100,6 +100,19 @@ body {
   animation: kenburns 20s ease-out forwards;
 }
 
+/** Login showcase — minimal zoom so low-res stills aren't magnified into blur. */
+@keyframes kenburns-subtle {
+  0% {
+    transform: scale(1) translate(0, 0);
+  }
+  100% {
+    transform: scale(1.04) translate(-0.5%, -0.5%);
+  }
+}
+.animate-kenburns-subtle {
+  animation: kenburns-subtle 20s ease-out forwards;
+}
+
 @keyframes shimmer {
   100% {
     transform: translateX(100%);
