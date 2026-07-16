@@ -45,6 +45,28 @@ import {
   preloadSceneImages,
   warmSceneImages,
 } from "@/lib/image-cache";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Progress } from "@/components/ui/progress";
 import { GameCanvas, type ExitDirection, type PlayerState } from "./GameCanvas";
 import { DialogueBox } from "./DialogueBox";
 import {
@@ -1024,21 +1046,28 @@ export function World({ mode, gameId: routeGameId, initialIdea }: WorldProps) {
   if (phase === "booting" || !scene || !premise) {
     return (
       <div className="flex min-h-dvh flex-col items-center justify-center px-6">
-        <div className="w-full max-w-sm">
-          <h2 className="font-display text-3xl font-extrabold text-ink">
-            {premise?.title ?? bible?.title ?? "Building your world"}
-          </h2>
-          <div className="mt-5 border-t border-ink/15 pt-4">
-            <p className="text-sm font-semibold text-ink">{bootStatus}</p>
-            <p className="mt-2 text-xs font-medium leading-relaxed text-inksoft">
-              universe · story · scene · character · interiors · voices — all
-              generated live{genCalls > 0 ? ` (${genCalls} calls so far)` : ""}
-            </p>
-            {error && (
-              <p className="mt-3 text-sm font-semibold text-health">{error}</p>
-            )}
-          </div>
-        </div>
+        <Card className="w-full max-w-sm gap-0 py-6">
+          <CardContent className="px-6">
+            <h2 className="font-display text-3xl font-extrabold text-foreground">
+              {premise?.title ?? bible?.title ?? "Building your world"}
+            </h2>
+            <div className="mt-5 border-t-2 border-border pt-4">
+              <p className="text-sm font-semibold text-foreground">
+                {bootStatus}
+              </p>
+              <p className="mt-2 text-xs font-medium leading-relaxed text-inksoft">
+                universe · story · scene · character · interiors · voices — all
+                generated live
+                {genCalls > 0 ? ` (${genCalls} calls so far)` : ""}
+              </p>
+              {error && (
+                <Alert variant="destructive" className="mt-3">
+                  <AlertDescription>{error}</AlertDescription>
+                </Alert>
+              )}
+            </div>
+          </CardContent>
+        </Card>
       </div>
     );
   }
@@ -1071,58 +1100,56 @@ export function World({ mode, gameId: routeGameId, initialIdea }: WorldProps) {
 
       <div className="pointer-events-none absolute inset-x-0 top-0 z-10 flex items-start justify-between gap-3 p-4">
         <div className="flex max-w-sm flex-col gap-2">
-          <div className="panel rounded-2xl px-4 py-2.5">
+          <Card className="gap-0 px-4 py-2.5">
             <p className="text-[10px] font-bold uppercase tracking-widest text-inksoft">
               {premise.title} · {scene.title}
             </p>
             {questHook && (
-              <p className="mt-0.5 text-sm font-semibold leading-snug text-ink">
+              <p className="mt-0.5 text-sm font-semibold leading-snug text-foreground">
                 {questHook}
               </p>
             )}
-          </div>
+          </Card>
           {inventory.length > 0 && (
-            <div className="panel flex w-fit max-w-xs flex-wrap items-center gap-1.5 rounded-2xl px-3 py-1.5">
-              <Package size={12} strokeWidth={2.5} className="text-primary" />
+            <Card className="flex w-fit max-w-xs flex-row flex-wrap items-center gap-1.5 gap-y-1 px-3 py-1.5">
+              <Package size={12} strokeWidth={2.5} className="text-main" />
               {inventory.map((it) => (
-                <span
-                  key={it}
-                  className="rounded-md bg-primary/10 px-1.5 py-0.5 text-[10px] font-bold text-primary"
-                >
+                <Badge key={it} variant="neutral" className="text-[10px]">
                   {it}
-                </span>
+                </Badge>
               ))}
-            </div>
+            </Card>
           )}
           {bible && (
-            <div className="panel flex w-fit items-center gap-2 rounded-full px-3 py-1.5">
-              <Search size={12} strokeWidth={2.5} className="text-primary" />
+            <Card className="flex w-fit flex-row items-center gap-2 px-3 py-1.5">
+              <Search size={12} strokeWidth={2.5} className="text-main" />
               <span className="flex gap-1">
                 {cluesFound.map((found, i) => (
                   <span
                     key={i}
                     className={`h-1.5 w-4 rounded-full ${
-                      found ? "bg-primary" : "bg-ink/15"
+                      found ? "bg-main" : "bg-foreground/15"
                     }`}
                   />
                 ))}
               </span>
-              <span className="text-[11px] font-bold tabular-nums text-ink">
+              <span className="text-[11px] font-bold tabular-nums text-foreground">
                 {cluesFound.filter(Boolean).length}/{cluesFound.length} clues
               </span>
               {allCluesFound && !finale && (
-                <button
+                <Button
+                  size="sm"
+                  className="pointer-events-auto ml-1 h-7 px-3 text-[11px]"
                   onClick={() => runFinale("victory")}
                   disabled={finaleLoading}
-                  className="pointer-events-auto ml-1 rounded-full bg-primary px-3 py-1 text-[11px] font-bold text-white transition enabled:hover:brightness-105 enabled:active:scale-95 disabled:opacity-60"
                 >
                   {finaleLoading ? "Unraveling…" : "Unravel the truth"}
-                </button>
+                </Button>
               )}
-            </div>
+            </Card>
           )}
           {bible && heat > 0 && (
-            <div className="panel flex w-fit items-center gap-2 rounded-full px-3 py-1.5">
+            <Card className="flex w-fit flex-row items-center gap-2 px-3 py-1.5">
               <Flame
                 size={12}
                 strokeWidth={2.5}
@@ -1131,29 +1158,23 @@ export function World({ mode, gameId: routeGameId, initialIdea }: WorldProps) {
               <span className="text-[10px] font-bold uppercase tracking-widest text-inksoft">
                 {bible.heatLabel}
               </span>
-              <span className="relative h-1.5 w-16 overflow-hidden rounded-full bg-ink/15">
-                <span
-                  className="absolute inset-y-0 left-0 rounded-full transition-all duration-500"
-                  style={{
-                    width: `${heat}%`,
-                    background: heat >= 60 ? "#b34a44" : "#b3862f",
-                  }}
-                />
-              </span>
-              <span className="text-[11px] font-bold tabular-nums text-ink">
+              <Progress
+                value={heat}
+                className="h-1.5 w-16 [&_[data-slot=progress-indicator]]:bg-health"
+              />
+              <span className="text-[11px] font-bold tabular-nums text-foreground">
                 {heat}
               </span>
-            </div>
+            </Card>
           )}
         </div>
         <div className="pointer-events-none flex flex-col items-end gap-2">
           <div className="pointer-events-auto flex items-center gap-2">
           {scene.annotated && (
-            <button
+            <Button
+              variant={showVision ? "default" : "neutral"}
+              size="icon"
               onClick={() => setShowVision((v) => !v)}
-              className={`panel flex h-9 w-9 items-center justify-center rounded-full transition active:scale-95 ${
-                showVision ? "text-primary" : "text-inksoft"
-              }`}
               title={
                 showVision
                   ? "Engine vision: the borders the model traced over its own frame"
@@ -1161,23 +1182,19 @@ export function World({ mode, gameId: routeGameId, initialIdea }: WorldProps) {
               }
             >
               <Eye size={15} />
-            </button>
+            </Button>
           )}
-          <button
+          <Button
+            variant={voiceOn ? "default" : "neutral"}
+            size="icon"
             onClick={() => setVoiceOn((v) => !v)}
-            className={`panel flex h-9 w-9 items-center justify-center rounded-full transition active:scale-95 ${
-              voiceOn ? "text-primary" : "text-inksoft"
-            }`}
             title={voiceOn ? "Voice on" : "Voice off"}
           >
             {voiceOn ? <Volume2 size={15} /> : <VolumeX size={15} />}
-          </button>
-          <button
-            onClick={leaveWorld}
-            className="panel rounded-full px-3.5 py-2 text-xs font-bold text-ink transition active:scale-95"
-          >
+          </Button>
+          <Button variant="neutral" size="sm" onClick={leaveWorld}>
             Leave world
-          </button>
+          </Button>
           </div>
           {!dialogue && !finale && (
             <Minimap
@@ -1212,119 +1229,89 @@ export function World({ mode, gameId: routeGameId, initialIdea }: WorldProps) {
       )}
 
       {!dialogue && !finale && (
-        <div
-          className="panel pointer-events-none absolute bottom-4 right-4 z-10 flex items-center gap-2 rounded-lg px-3 py-2"
+        <Card className="pointer-events-none absolute bottom-4 right-4 z-10 flex-row items-center gap-2 gap-y-0 px-3 py-2"
           title="Every screen is painted, then the model traces borders over its own frame and reads both images back into the game"
         >
-          <Zap size={11} strokeWidth={2.5} className="text-primary" />
-          <span className="text-[11px] font-semibold tabular-nums text-ink">
+          <Zap size={11} strokeWidth={2.5} className="text-main" />
+          <span className="text-[11px] font-semibold tabular-nums text-foreground">
             {genCalls} generations
           </span>
-          <span className="h-3 w-px bg-ink/15" />
-          <Compass size={11} strokeWidth={2.5} className="text-primary" />
-          <span className="text-[11px] font-semibold tabular-nums text-ink">
+          <span className="h-3 w-px bg-border" />
+          <Compass size={11} strokeWidth={2.5} className="text-main" />
+          <span className="text-[11px] font-semibold tabular-nums text-foreground">
             {screensDreamed} screens
           </span>
-          <span className="h-3 w-px bg-ink/15" />
-          <DoorOpen size={11} strokeWidth={2.5} className="text-primary" />
-          <span className="text-[11px] font-semibold tabular-nums text-ink">
+          <span className="h-3 w-px bg-border" />
+          <DoorOpen size={11} strokeWidth={2.5} className="text-main" />
+          <span className="text-[11px] font-semibold tabular-nums text-foreground">
             rooms {interiorsReady}/3
           </span>
-        </div>
+        </Card>
       )}
 
-      <AnimatePresence>
-        {assetLoading && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="absolute inset-0 z-20 flex items-center justify-center bg-black/60"
-          >
-            <div className="panel rounded-2xl px-6 py-4 text-center">
-              <p className="font-display text-xl font-bold text-ink">{assetLoading}</p>
-              <p className="mt-1 flex items-center justify-center gap-1.5 text-sm font-medium text-inksoft">
-                <span className="animate-breathe inline-block h-1.5 w-1.5 rounded-full bg-primary" />
-                stepping through…
-              </p>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      <Dialog open={!!assetLoading}>
+        <DialogContent className="[&>button]:hidden" onPointerDownOutside={(e) => e.preventDefault()}>
+          <DialogHeader>
+            <DialogTitle className="text-center font-display text-xl">
+              {assetLoading}
+            </DialogTitle>
+            <DialogDescription className="flex items-center justify-center gap-1.5 text-center">
+              <span className="animate-breathe inline-block size-1.5 rounded-full bg-main" />
+              stepping through…
+            </DialogDescription>
+          </DialogHeader>
+        </DialogContent>
+      </Dialog>
 
-      <AnimatePresence>
-        {pendingExplore && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="absolute inset-0 z-20 flex items-center justify-center bg-black/60"
-          >
-            <div className="panel rounded-2xl px-6 py-5 text-center">
-              <p className="font-display text-xl font-bold text-ink">
-                Explore {pendingExplore.word}?
-              </p>
-              <p className="mt-1 text-sm font-medium text-inksoft">
-                Painting a new screen uses API credits.
-              </p>
-              <div className="mt-5 flex items-center justify-center gap-3">
-                <button
-                  onClick={confirmExplore}
-                  className="rounded-full bg-primary px-6 py-2.5 text-sm font-bold text-white shadow-soft transition hover:brightness-105 active:scale-95"
-                >
-                  Generate
-                </button>
-                <button
-                  onClick={cancelExplore}
-                  className="rounded-full px-6 py-2.5 text-sm font-bold text-inksoft transition hover:text-ink active:scale-95"
-                >
-                  Stay
-                </button>
-              </div>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      <AlertDialog
+        open={!!pendingExplore}
+        onOpenChange={(open) => !open && cancelExplore()}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              Explore {pendingExplore?.word}?
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              Painting a new screen uses API credits.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Stay</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmExplore}>
+              Generate
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
-      <AnimatePresence>
-        {wandering && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="absolute inset-0 z-20 flex items-center justify-center bg-black/60"
-          >
-            <div className="panel rounded-2xl px-6 py-4 text-center">
-              <p className="font-display text-xl font-bold text-ink">
-                Wandering {wandering}…
-              </p>
-              <p className="mt-1 flex items-center justify-center gap-1.5 text-sm font-medium text-inksoft">
-                <span className="animate-breathe inline-block h-1.5 w-1.5 rounded-full bg-primary" />
-                painting the next screen · tracing it · reading it
-              </p>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      <Dialog open={!!wandering}>
+        <DialogContent className="[&>button]:hidden" onPointerDownOutside={(e) => e.preventDefault()}>
+          <DialogHeader>
+            <DialogTitle className="text-center font-display text-xl">
+              Wandering {wandering}…
+            </DialogTitle>
+            <DialogDescription className="flex items-center justify-center gap-1.5 text-center">
+              <span className="animate-breathe inline-block size-1.5 rounded-full bg-main" />
+              painting the next screen · tracing it · reading it
+            </DialogDescription>
+          </DialogHeader>
+        </DialogContent>
+      </Dialog>
 
-      <AnimatePresence>
-        {entering && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="absolute inset-0 z-20 flex items-center justify-center bg-black/60"
-          >
-            <div className="panel rounded-2xl px-6 py-4 text-center">
-              <p className="font-display text-xl font-bold text-ink">{entering}</p>
-              <p className="mt-1 flex items-center justify-center gap-1.5 text-sm font-medium text-inksoft">
-                <span className="animate-breathe inline-block h-1.5 w-1.5 rounded-full bg-primary" />
-                stepping inside…
-              </p>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      <Dialog open={!!entering}>
+        <DialogContent className="[&>button]:hidden" onPointerDownOutside={(e) => e.preventDefault()}>
+          <DialogHeader>
+            <DialogTitle className="text-center font-display text-xl">
+              {entering}
+            </DialogTitle>
+            <DialogDescription className="flex items-center justify-center gap-1.5 text-center">
+              <span className="animate-breathe inline-block size-1.5 rounded-full bg-main" />
+              stepping inside…
+            </DialogDescription>
+          </DialogHeader>
+        </DialogContent>
+      </Dialog>
 
       <AnimatePresence>
         {finale && (
@@ -1356,12 +1343,9 @@ export function World({ mode, gameId: routeGameId, initialIdea }: WorldProps) {
                 <p className="mt-4 text-base font-medium leading-relaxed text-white/90">
                   {finale.resolution}
                 </p>
-                <button
-                  onClick={leaveWorld}
-                  className="mt-8 rounded-full bg-primary px-8 py-3.5 text-sm font-bold text-white shadow-soft transition hover:brightness-105 active:scale-95"
-                >
+                <Button className="mt-8" size="lg" onClick={leaveWorld}>
                   Back to gallery
-                </button>
+                </Button>
               </motion.div>
             </div>
           </motion.div>
@@ -1389,14 +1373,16 @@ export function World({ mode, gameId: routeGameId, initialIdea }: WorldProps) {
 
       <AnimatePresence>
         {error && phase === "playing" && (
-          <motion.p
+          <motion.div
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0 }}
-            className="card absolute bottom-16 left-1/2 z-30 -translate-x-1/2 rounded-xl px-4 py-2.5 text-sm font-semibold text-health"
+            className="absolute bottom-16 left-1/2 z-30 w-[min(92%,28rem)] -translate-x-1/2"
           >
-            {error}
-          </motion.p>
+            <Alert variant="destructive">
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
+          </motion.div>
         )}
       </AnimatePresence>
     </div>

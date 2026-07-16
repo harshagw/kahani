@@ -9,6 +9,20 @@ import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { ArrowRight, Trash2 } from "lucide-react";
 import { World } from "@/components/World";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import { Textarea } from "@/components/ui/textarea";
 import { MAX_CREATE_IDEA_LENGTH } from "@/lib/constants";
 import { createClient } from "@/lib/supabase/client";
 import type {
@@ -38,6 +52,7 @@ export function Home() {
   const [signingOut, setSigningOut] = useState(false);
   const [creatingIdea, setCreatingIdea] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -67,10 +82,8 @@ export function Home() {
   }, [refresh]);
 
   const mine = userId ? games.filter((g) => g.owner === userId) : [];
-  // Everyone else's worlds — replay loads from storage, no new generation.
   const gallery = userId ? games.filter((g) => g.owner !== userId) : games;
 
-  /** Start live generation inline; World redirects to `/play/[id]` once the row exists. */
   const startCreate = () => {
     const text = idea.trim();
     if (!text || !quota?.canCreate) return;
@@ -85,18 +98,19 @@ export function Home() {
     router.refresh();
   };
 
-  const deleteGame = async (id: string) => {
-    if (!confirm("Delete this world? This cannot be undone.")) return;
+  const confirmDelete = async () => {
+    if (!deleteTarget) return;
     try {
-      // 204 No Content — no JSON body on success.
-      const res = await fetch(`/api/games/${id}`, { method: "DELETE" });
+      const res = await fetch(`/api/games/${deleteTarget}`, { method: "DELETE" });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
         throw new Error(data.error || "Delete failed.");
       }
+      setDeleteTarget(null);
       await refresh();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Delete failed.");
+      setDeleteTarget(null);
     }
   };
 
@@ -117,25 +131,26 @@ export function Home() {
         initial={{ opacity: 0, y: 14 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5, ease: EASE_OUT }}
-        className="mb-12 border-b border-ink/15 pb-6"
+        className="mb-12 border-b-2 border-border pb-6"
       >
         <div className="mb-4 flex items-end justify-between gap-4">
-          <p className="text-xs font-bold uppercase tracking-widest text-primary">
+          <p className="text-xs font-bold uppercase tracking-widest text-main">
             Community gallery · saved worlds
           </p>
-          <button
+          <Button
             type="button"
+            variant="noShadow"
+            className="h-auto shrink-0 bg-transparent p-0 text-xs font-bold uppercase tracking-widest text-inksoft hover:translate-x-0 hover:translate-y-0 hover:shadow-shadow hover:text-foreground"
             onClick={signOut}
             disabled={signingOut}
-            className="shrink-0 text-xs font-bold uppercase tracking-widest text-inksoft transition hover:text-ink disabled:opacity-50"
           >
             {signingOut ? "Signing out…" : "Sign out"}
-          </button>
+          </Button>
         </div>
-        <h1 className="font-display text-6xl font-extrabold leading-[0.95] tracking-tight text-ink sm:text-7xl">
+        <h1 className="font-display text-6xl font-extrabold leading-[0.95] tracking-tight text-foreground sm:text-7xl">
           Kahani
         </h1>
-        <p className="mt-4 max-w-md text-lg font-semibold text-ink">
+        <p className="mt-4 max-w-md text-lg font-semibold text-foreground">
           Walk worlds others have built — or describe your own.
         </p>
       </motion.header>
@@ -150,54 +165,66 @@ export function Home() {
           Create
         </p>
         {loading || quota === null ? (
-          <div className="rounded-2xl border border-ink/10 bg-ink/5 px-4 py-5">
-            <p className="text-sm font-semibold text-inksoft">Checking your quota…</p>
-          </div>
+          <Card className="gap-0 py-5">
+            <CardContent className="px-4">
+              <p className="text-sm font-semibold text-inksoft">
+                Checking your quota…
+              </p>
+            </CardContent>
+          </Card>
         ) : quota.canCreate ? (
-          <div className="card rounded-2xl p-2">
-            <textarea
-              value={idea}
-              onChange={(e) => setIdea(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) startCreate();
-              }}
-              maxLength={MAX_CREATE_IDEA_LENGTH}
-              rows={3}
-              placeholder="e.g. A rain-flooded night market in Mumbai. I'm a courier carrying a sealed tiffin box someone will kill for…"
-              className="w-full resize-none rounded-xl bg-transparent px-3 py-2.5 text-[15px] font-medium leading-relaxed text-ink outline-none placeholder:text-inksoft/50"
-            />
-            <div className="flex items-center justify-between px-2 pb-1">
-              <span className="text-[11px] font-medium text-inksoft/70">
-                ⌘↵ to build · {quota.unlimited ? "unlimited" : `${quota.used}/${quota.limit} used`}
-              </span>
-              <button
-                onClick={startCreate}
-                disabled={!idea.trim()}
-                className="flex items-center gap-2 rounded-full bg-primary px-5 py-2.5 text-sm font-bold text-white shadow-soft transition enabled:hover:brightness-105 enabled:active:scale-95 disabled:opacity-40"
-              >
-                Build a new world
-                <ArrowRight size={15} />
-              </button>
-            </div>
-          </div>
+          <Card className="gap-0 py-2">
+            <CardContent className="px-2">
+              <Textarea
+                value={idea}
+                onChange={(e) => setIdea(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) startCreate();
+                }}
+                maxLength={MAX_CREATE_IDEA_LENGTH}
+                rows={3}
+                placeholder="e.g. A rain-flooded night market in Mumbai. I'm a courier carrying a sealed tiffin box someone will kill for…"
+                className="resize-none border-0 shadow-none"
+              />
+              <div className="flex items-center justify-between px-2 pb-1">
+                <span className="text-[11px] font-medium text-inksoft/70">
+                  ⌘↵ to build ·{" "}
+                  {quota.unlimited
+                    ? "unlimited"
+                    : `${quota.used}/${quota.limit} used`}
+                </span>
+                <Button onClick={startCreate} disabled={!idea.trim()}>
+                  Build a new world
+                  <ArrowRight size={15} />
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
         ) : (
-          <div className="rounded-2xl border border-ink/10 bg-ink/5 px-4 py-5">
-            <p className="text-sm font-semibold text-ink">{quotaMessage}</p>
-            {mine.length > 0 && (
-              <button
-                type="button"
-                onClick={() => router.push(`/play/${mine[0].id}`)}
-                className="mt-3 text-sm font-bold text-primary transition hover:underline"
-              >
-                Continue your world →
-              </button>
-            )}
-          </div>
+          <Card className="gap-0 py-5">
+            <CardContent className="px-4">
+              <p className="text-sm font-semibold text-foreground">
+                {quotaMessage}
+              </p>
+              {mine.length > 0 && (
+                <Button
+                  type="button"
+                  variant="noShadow"
+                  className="mt-3 h-auto bg-transparent p-0 text-sm font-bold text-main hover:translate-x-0 hover:translate-y-0 hover:shadow-shadow"
+                  onClick={() => router.push(`/play/${mine[0].id}`)}
+                >
+                  Continue your world →
+                </Button>
+              )}
+            </CardContent>
+          </Card>
         )}
       </motion.section>
 
       {error && (
-        <p className="mb-8 text-sm font-semibold text-health">{error}</p>
+        <Alert variant="destructive" className="mb-8">
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
       )}
 
       {mine.length > 0 && (
@@ -211,10 +238,14 @@ export function Home() {
                 key={game.id}
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.4, delay: 0.1 + i * 0.05, ease: EASE_OUT }}
+                transition={{
+                  duration: 0.4,
+                  delay: 0.1 + i * 0.05,
+                  ease: EASE_OUT,
+                }}
               >
-                <div className="group flex w-full items-center gap-4 border-t border-ink/10 py-4">
-                  <div className="h-14 w-20 shrink-0 overflow-hidden rounded-lg bg-ink/10">
+                <div className="group flex w-full items-center gap-4 border-t-2 border-border py-4">
+                  <div className="h-14 w-20 shrink-0 overflow-hidden rounded-base border-2 border-border bg-foreground/10">
                     {game.thumbnailUrl ? (
                       <img
                         src={game.thumbnailUrl}
@@ -228,26 +259,30 @@ export function Home() {
                     )}
                   </div>
                   <div className="min-w-0 flex-1">
-                    <h2 className="font-display text-lg font-bold text-ink">{game.title}</h2>
+                    <h2 className="font-display text-lg font-bold text-foreground">
+                      {game.title}
+                    </h2>
                     <p className="text-xs font-medium text-inksoft">
                       {new Date(game.createdAt).toLocaleDateString()}
                     </p>
                   </div>
-                  <button
+                  <Button
                     type="button"
+                    size="sm"
                     onClick={() => router.push(`/play/${game.id}`)}
-                    className="shrink-0 rounded-full bg-primary px-4 py-2 text-xs font-bold text-white transition hover:brightness-105"
                   >
                     Continue
-                  </button>
-                  <button
+                  </Button>
+                  <Button
                     type="button"
-                    onClick={() => deleteGame(game.id)}
-                    className="shrink-0 rounded-full p-2 text-inksoft transition hover:bg-health/10 hover:text-health"
+                    variant="neutral"
+                    size="icon"
+                    className="shrink-0 text-inksoft hover:text-health"
+                    onClick={() => setDeleteTarget(game.id)}
                     title="Delete world"
                   >
                     <Trash2 size={16} />
-                  </button>
+                  </Button>
                 </div>
               </motion.li>
             ))}
@@ -273,9 +308,13 @@ export function Home() {
                 type="button"
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.4, delay: 0.12 + i * 0.04, ease: EASE_OUT }}
+                transition={{
+                  duration: 0.4,
+                  delay: 0.12 + i * 0.04,
+                  ease: EASE_OUT,
+                }}
                 onClick={() => router.push(`/play/${game.id}`)}
-                className="group relative aspect-[4/3] overflow-hidden rounded-xl border border-ink/10 text-left transition hover:border-primary/40"
+                className="group relative aspect-[4/3] overflow-hidden rounded-base border-2 border-border text-left shadow-shadow transition hover:translate-x-boxShadowX hover:translate-y-boxShadowY hover:shadow-none"
               >
                 {game.thumbnailUrl ? (
                   <img
@@ -284,9 +323,9 @@ export function Home() {
                     className="absolute inset-0 h-full w-full object-cover transition duration-500 group-hover:scale-105"
                   />
                 ) : (
-                  <div className="absolute inset-0 bg-ink/10" />
+                  <div className="absolute inset-0 bg-foreground/10" />
                 )}
-                <div className="absolute inset-0 bg-gradient-to-t from-ink/80 via-ink/20 to-transparent" />
+                <div className="absolute inset-0 bg-gradient-to-t from-foreground/80 via-foreground/20 to-transparent" />
                 <p className="absolute inset-x-0 bottom-0 px-3 pb-3 font-display text-sm font-bold text-white">
                   {game.title}
                 </p>
@@ -295,6 +334,24 @@ export function Home() {
           </div>
         )}
       </section>
+
+      <AlertDialog
+        open={deleteTarget !== null}
+        onOpenChange={(open) => !open && setDeleteTarget(null)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete this world?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmDelete}>Delete</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

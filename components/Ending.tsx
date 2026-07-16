@@ -2,6 +2,9 @@
 
 import { motion } from "framer-motion";
 import type { LucideIcon } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
 import type { Premise, Scene } from "@/lib/types";
 import {
   CLOCK_META,
@@ -12,6 +15,7 @@ import {
 } from "@/lib/stats";
 import { CLOCK_ICON, STAT_ICON } from "./icons";
 
+/** Journey recap and grade screen after a legacy game run. */
 export function Ending({
   premise,
   scenes,
@@ -41,13 +45,12 @@ export function Ending({
   return (
     <div className="relative min-h-dvh w-full overflow-y-auto">
       <div className="mx-auto max-w-3xl px-5 py-12 sm:py-16">
-        {/* Hero: finale image */}
         {finale?.image && (
           <motion.div
             initial={{ opacity: 0, scale: 0.98 }}
             animate={{ opacity: 1, scale: 1 }}
             transition={{ duration: 0.5 }}
-            className="relative mx-auto mb-[-3.5rem] max-w-md overflow-hidden rounded-2xl shadow-soft"
+            className="relative mx-auto mb-[-3.5rem] max-w-md overflow-hidden rounded-base border-2 border-border shadow-shadow"
           >
             <img
               src={finale.image}
@@ -58,13 +61,12 @@ export function Ending({
           </motion.div>
         )}
 
-        {/* Grade badge */}
         <motion.div
           initial={{ opacity: 0, scale: 0.8 }}
           animate={{ opacity: 1, scale: 1 }}
           transition={{ duration: 0.55, ease: [0.16, 1, 0.3, 1], delay: 0.1 }}
-          className="relative z-10 mx-auto flex h-28 w-28 items-center justify-center rounded-full bg-surface shadow-soft"
-          style={{ border: `5px solid ${grade.color}` }}
+          className="relative z-10 mx-auto flex size-28 items-center justify-center rounded-full border-[5px] bg-secondary-background shadow-shadow"
+          style={{ borderColor: grade.color }}
         >
           <span
             className="font-display text-6xl font-extrabold"
@@ -86,7 +88,7 @@ export function Ending({
           >
             {kicker} · {grade.label}
           </p>
-          <h1 className="mt-2 font-display text-4xl font-extrabold text-ink sm:text-5xl">
+          <h1 className="mt-2 font-display text-4xl font-extrabold text-foreground sm:text-5xl">
             {finale?.endingTitle || headline}
           </h1>
           <p className="mt-2 text-sm font-semibold text-inksoft">
@@ -94,7 +96,6 @@ export function Ending({
           </p>
         </motion.div>
 
-        {/* Final stat sheet */}
         <motion.div
           initial={{ opacity: 0, y: 14 }}
           animate={{ opacity: 1, y: 0 }}
@@ -125,7 +126,6 @@ export function Ending({
           />
         </motion.div>
 
-        {/* Journey recap */}
         <div className="mt-12 space-y-3">
           <p className="text-center text-xs font-bold uppercase tracking-widest text-inksoft">
             Your journey · {scenes.length} frames
@@ -137,28 +137,32 @@ export function Ending({
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true, margin: "-40px" }}
               transition={{ duration: 0.4 }}
-              className="card flex items-center gap-3.5 rounded-2xl p-2.5"
             >
-              <div className="relative shrink-0 overflow-hidden rounded-xl">
-                <img
-                  src={scene.image}
-                  alt=""
-                  className="h-20 w-28 object-cover sm:h-24 sm:w-36"
-                />
-                <span className="absolute left-1.5 top-1.5 rounded-md bg-surface/90 px-1.5 py-0.5 text-[10px] font-extrabold uppercase tracking-wider text-primary">
-                  {scene.location || `Ch. ${i + 1}`}
-                </span>
-              </div>
-              <div className="min-w-0 flex-1">
-                <p className="font-display text-base font-bold leading-snug text-ink sm:text-lg">
-                  {scene.caption}
-                </p>
-                {scene.chosen && (
-                  <p className="mt-1 truncate text-sm font-semibold text-primary">
-                    → {scene.chosen}
+              <Card className="flex-row items-center gap-3.5 py-2.5">
+                <div className="relative shrink-0 overflow-hidden rounded-base border-2 border-border">
+                  <img
+                    src={scene.image}
+                    alt=""
+                    className="h-20 w-28 object-cover sm:h-24 sm:w-36"
+                  />
+                  <Badge
+                    variant="neutral"
+                    className="absolute left-1.5 top-1.5 text-[10px] uppercase tracking-wider"
+                  >
+                    {scene.location || `Ch. ${i + 1}`}
+                  </Badge>
+                </div>
+                <div className="min-w-0 flex-1 px-0">
+                  <p className="font-display text-base font-bold leading-snug text-foreground sm:text-lg">
+                    {scene.caption}
                   </p>
-                )}
-              </div>
+                  {scene.chosen && (
+                    <p className="mt-1 truncate text-sm font-semibold text-main">
+                      → {scene.chosen}
+                    </p>
+                  )}
+                </div>
+              </Card>
             </motion.div>
           ))}
         </div>
@@ -172,12 +176,9 @@ export function Ending({
           <p className="text-xs font-semibold text-inksoft">
             All frames generated in real time
           </p>
-          <button
-            onClick={onReplay}
-            className="rounded-full bg-primary px-9 py-3.5 text-sm font-extrabold text-white shadow-soft transition hover:brightness-105 active:scale-95"
-          >
+          <Button size="lg" onClick={onReplay}>
             Play again
-          </button>
+          </Button>
         </motion.div>
       </div>
     </div>
@@ -196,12 +197,12 @@ function StatChip({
   value: string;
 }) {
   return (
-    <div className="card flex items-center gap-2 rounded-full px-4 py-2">
+    <Badge variant="neutral" className="gap-2 px-4 py-2 text-sm">
       <Icon size={14} strokeWidth={2.25} style={{ color }} />
       <span className="text-xs font-semibold text-inksoft">{label}</span>
       <span className="text-sm font-extrabold tabular-nums" style={{ color }}>
         {value}
       </span>
-    </div>
+    </Badge>
   );
 }

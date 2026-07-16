@@ -1,5 +1,7 @@
 "use client";
 
+import { Card } from "@/components/ui/card";
+
 export type MinimapCell = {
   x: number;
   y: number;
@@ -109,8 +111,8 @@ export function Minimap({
   }
 
   return (
-    <div
-      className="panel pointer-events-none rounded-xl p-0"
+    <Card
+      className="pointer-events-none p-0"
       style={{ width: PANEL, height: PANEL }}
       aria-label="World map"
     >
@@ -177,6 +179,6 @@ export function Minimap({
           />
         )}
       </svg>
-    </div>
+    </Card>
   );
 }

@@ -4,12 +4,17 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { ArrowRight } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { PREMISES } from "@/lib/premises";
 import { createClient } from "@/lib/supabase/client";
 import { PREMISE_ICON } from "./icons";
 
 const EASE_OUT = [0.16, 1, 0.3, 1] as const;
 
+/** Legacy premise-picker entry before explorable-world flow. */
 export function Landing({ onStart }: { onStart: (idea: string) => void }) {
   const router = useRouter();
   const [idea, setIdea] = useState("");
@@ -30,80 +35,76 @@ export function Landing({ onStart }: { onStart: (idea: string) => void }) {
 
   return (
     <div className="mx-auto grid min-h-dvh max-w-5xl grid-cols-1 items-start gap-10 px-6 py-14 md:grid-cols-[minmax(0,1fr)_1.25fr] md:gap-16 md:py-24">
-      {/* Left-biased title block */}
       <motion.header
         initial={{ opacity: 0, y: 14 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5, ease: EASE_OUT }}
         className="md:sticky md:top-24"
       >
-        <div className="mb-6 flex items-end justify-between gap-4 border-b border-ink/15 pb-3">
-          <p className="text-xs font-bold uppercase tracking-widest text-primary">
+        <div className="mb-6 flex items-end justify-between gap-4 border-b-2 border-border pb-3">
+          <p className="text-xs font-bold uppercase tracking-widest text-main">
             Generated live · Nano Banana 2 Lite
           </p>
-          <button
+          <Button
             type="button"
+            variant="noShadow"
+            className="h-auto shrink-0 bg-transparent p-0 text-xs font-bold uppercase tracking-widest text-inksoft hover:translate-x-0 hover:translate-y-0 hover:shadow-shadow hover:text-foreground"
             onClick={signOut}
             disabled={signingOut}
-            className="shrink-0 text-xs font-bold uppercase tracking-widest text-inksoft transition hover:text-ink disabled:opacity-50"
           >
             {signingOut ? "Signing out…" : "Sign out"}
-          </button>
+          </Button>
         </div>
 
-        <h1 className="font-display text-6xl font-extrabold leading-[0.95] tracking-tight text-ink sm:text-7xl">
+        <h1 className="font-display text-6xl font-extrabold leading-[0.95] tracking-tight text-foreground sm:text-7xl">
           Kahani
         </h1>
-        <p className="mt-4 max-w-xs text-lg font-semibold text-ink">
+        <p className="mt-4 max-w-xs text-lg font-semibold text-foreground">
           Describe a scene. Walk into it.
         </p>
         <p className="mt-4 max-w-sm text-sm font-medium leading-relaxed text-inksoft">
-          Any Indian street, myth, or monsoon becomes a living, explorable
-          world — places, characters, and voices generated as you play. WASD to
-          move, E to enter.
+          Any Indian street, myth, or monsoon becomes a living, explorable world
+          — places, characters, and voices generated as you play. WASD to move,
+          E to enter.
         </p>
       </motion.header>
 
-      {/* Scene-idea entry */}
       <motion.div
         initial={{ opacity: 0, y: 12 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.45, delay: 0.08, ease: EASE_OUT }}
       >
-        <label
+        <Label
           htmlFor="scene-idea"
           className="mb-2 block text-xs font-bold uppercase tracking-widest text-inksoft"
         >
           Your opening scene
-        </label>
-        <div className="card rounded-2xl p-2">
-          <textarea
-            id="scene-idea"
-            value={idea}
-            onChange={(e) => setIdea(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) submit();
-            }}
-            rows={4}
-            placeholder="e.g. A rain-flooded night market in Mumbai. I'm a courier carrying a sealed tiffin box someone will kill for…"
-            className="w-full resize-none rounded-xl bg-transparent px-3 py-2.5 text-[15px] font-medium leading-relaxed text-ink outline-none placeholder:text-inksoft/50"
-          />
-          <div className="flex items-center justify-between px-2 pb-1">
-            <span className="text-[11px] font-medium text-inksoft/70">
-              Any place, any era, any story — ⌘↵ to start
-            </span>
-            <button
-              onClick={submit}
-              disabled={!idea.trim()}
-              className="flex items-center gap-2 rounded-full bg-primary px-5 py-2.5 text-sm font-bold text-white shadow-soft transition enabled:hover:brightness-105 enabled:active:scale-95 disabled:opacity-40"
-            >
-              Build my world
-              <ArrowRight size={15} />
-            </button>
-          </div>
-        </div>
+        </Label>
+        <Card className="gap-0 py-2">
+          <CardContent className="px-2">
+            <Textarea
+              id="scene-idea"
+              value={idea}
+              onChange={(e) => setIdea(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) submit();
+              }}
+              rows={4}
+              placeholder="e.g. A rain-flooded night market in Mumbai. I'm a courier carrying a sealed tiffin box someone will kill for…"
+              className="resize-none border-0 shadow-none"
+            />
+            <div className="flex items-center justify-between px-2 pb-1">
+              <span className="text-[11px] font-medium text-inksoft/70">
+                Any place, any era, any story — ⌘↵ to start
+              </span>
+              <Button onClick={submit} disabled={!idea.trim()}>
+                Build my world
+                <ArrowRight size={15} />
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
 
-        {/* One-tap starting points */}
         <p className="mb-1 mt-8 text-xs font-bold uppercase tracking-widest text-inksoft">
           Or start from one of these
         </p>
@@ -115,21 +116,26 @@ export function Landing({ onStart }: { onStart: (idea: string) => void }) {
                 key={premise.id}
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.4, delay: 0.15 + i * 0.06, ease: EASE_OUT }}
+                transition={{
+                  duration: 0.4,
+                  delay: 0.15 + i * 0.06,
+                  ease: EASE_OUT,
+                }}
               >
-                <button
+                <Button
+                  variant="noShadow"
+                  className="group h-auto w-full justify-start gap-4 rounded-none border-0 border-t-2 border-border bg-transparent px-0 py-4 shadow-none hover:translate-x-0 hover:translate-y-0 hover:bg-transparent hover:shadow-none"
                   onClick={() => onStart(premise.setup)}
-                  className="group flex w-full items-center gap-4 border-t border-ink/10 py-4 text-left transition-colors hover:border-primary/40"
                 >
                   {Icon ? (
                     <Icon
                       size={22}
                       strokeWidth={1.75}
-                      className="shrink-0 text-primary"
+                      className="shrink-0 text-main"
                     />
                   ) : null}
-                  <div className="min-w-0 flex-1">
-                    <h2 className="font-display text-lg font-bold text-ink">
+                  <div className="min-w-0 flex-1 text-left">
+                    <h2 className="font-display text-lg font-bold text-foreground">
                       {premise.title}
                     </h2>
                     <p className="truncate text-sm font-medium text-inksoft">
@@ -138,15 +144,15 @@ export function Landing({ onStart }: { onStart: (idea: string) => void }) {
                   </div>
                   <ArrowRight
                     size={17}
-                    className="shrink-0 text-inksoft/40 transition-all duration-300 group-hover:translate-x-1 group-hover:text-primary"
+                    className="shrink-0 text-inksoft/40 transition-all duration-300 group-hover:translate-x-1 group-hover:text-main"
                   />
-                </button>
+                </Button>
               </motion.li>
             );
           })}
         </ul>
 
-        <p className="mt-8 border-t border-ink/10 pt-5 text-xs font-medium text-inksoft/70">
+        <p className="mt-8 border-t-2 border-border pt-5 text-xs font-medium text-inksoft/70">
           Real-time generative storytelling · built for the NB2 Lite hackathon
         </p>
       </motion.div>

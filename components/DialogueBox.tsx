@@ -3,6 +3,10 @@
 import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { Send, Volume2, VolumeX } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import type { DialogueTurn, NpcDef } from "@/lib/universe";
 
 const MOOD_COLOR: Record<string, string> = {
@@ -15,6 +19,7 @@ const MOOD_COLOR: Record<string, string> = {
   angry: "#b34a44",
 };
 
+/** In-world NPC conversation panel with reply chips and free-text input. */
 export function DialogueBox({
   npc,
   history,
@@ -42,7 +47,6 @@ export function DialogueBox({
   const scrollRef = useRef<HTMLDivElement>(null);
   const lastNpcLine = [...history].reverse().find((t) => t.speaker === "npc");
 
-  // Typewriter: the latest NPC line spells itself out like game dialogue.
   const [typed, setTyped] = useState(0);
   useEffect(() => {
     setTyped(0);
@@ -64,7 +68,6 @@ export function DialogueBox({
     scrollRef.current?.scrollTo({ top: 99999, behavior: "smooth" });
   }, [history.length, thinking, typed]);
 
-  // Number-key replies + Esc to leave.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
@@ -81,147 +84,160 @@ export function DialogueBox({
     return () => window.removeEventListener("keydown", onKey);
   }, [options, thinking, onSay, onClose]);
 
+  const moodColor = mood ? (MOOD_COLOR[mood] ?? "#7c6d61") : undefined;
+
   return (
     <motion.div
       initial={{ y: 24, opacity: 0 }}
       animate={{ y: 0, opacity: 1 }}
       exit={{ y: 24, opacity: 0 }}
       transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
-      className="sheet pointer-events-auto w-full max-w-2xl rounded-t-2xl px-5 pb-5 pt-4 sm:rounded-2xl"
+      className="pointer-events-auto w-full max-w-2xl"
     >
-      {/* Header */}
-      <div className="mb-2 flex items-center gap-2.5">
-        <div>
-          <p className="font-display text-lg font-bold leading-none text-ink">
-            {npc.name}
-          </p>
-          <p className="mt-0.5 text-xs font-medium text-inksoft">{npc.role}</p>
-        </div>
-        {mood && (
-          <span
-            className="flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide"
-            style={{
-              color: MOOD_COLOR[mood] ?? "#7c6d61",
-              backgroundColor: `${MOOD_COLOR[mood] ?? "#7c6d61"}18`,
+      <Card className="gap-0 rounded-t-base py-4 sm:rounded-base">
+        <CardContent className="px-5">
+          <div className="mb-2 flex items-center gap-2.5">
+            <div>
+              <p className="font-display text-lg font-bold leading-none text-foreground">
+                {npc.name}
+              </p>
+              <p className="mt-0.5 text-xs font-medium text-inksoft">
+                {npc.role}
+              </p>
+            </div>
+            {mood && moodColor && (
+              <Badge
+                variant="neutral"
+                className="uppercase tracking-wide"
+                style={{
+                  color: moodColor,
+                  backgroundColor: `${moodColor}18`,
+                }}
+              >
+                <span
+                  className="size-1.5 rounded-full"
+                  style={{ backgroundColor: moodColor }}
+                />
+                {mood}
+              </Badge>
+            )}
+            <Button
+              type="button"
+              variant={voiceOn ? "noShadow" : "neutral"}
+              size="icon"
+              className={`ml-auto size-8 ${voiceOn ? "bg-main/10 text-main" : ""}`}
+              onClick={onToggleVoice}
+              title={voiceOn ? "Voice on" : "Voice off"}
+            >
+              {voiceOn ? <Volume2 size={15} /> : <VolumeX size={15} />}
+            </Button>
+            <Button
+              type="button"
+              variant="neutral"
+              size="sm"
+              onClick={onClose}
+            >
+              Esc · leave
+            </Button>
+          </div>
+
+          <div
+            ref={scrollRef}
+            className="no-scrollbar max-h-36 space-y-1.5 overflow-y-auto pb-1"
+          >
+            {history.slice(-6).map((t, i, arr) => {
+              const isLastNpc =
+                t.speaker === "npc" &&
+                t.text === lastNpcLine?.text &&
+                i === arr.length - 1;
+              return (
+                <p
+                  key={`${i}-${t.text.slice(0, 12)}`}
+                  className={
+                    t.speaker === "npc"
+                      ? "text-[15px] font-medium leading-snug text-foreground"
+                      : "text-right text-sm font-semibold text-main"
+                  }
+                >
+                  {isLastNpc ? t.text.slice(0, typed) : t.text}
+                </p>
+              );
+            })}
+            {thinking && (
+              <p className="flex items-center gap-1.5 text-sm font-medium text-inksoft">
+                <span className="animate-breathe inline-block size-1.5 rounded-full bg-main" />
+                <span
+                  className="animate-breathe inline-block size-1.5 rounded-full bg-main"
+                  style={{ animationDelay: "0.15s" }}
+                />
+                <span
+                  className="animate-breathe inline-block size-1.5 rounded-full bg-main"
+                  style={{ animationDelay: "0.3s" }}
+                />
+              </p>
+            )}
+            {speaking && !thinking && lastNpcLine && (
+              <p className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-widest text-main/70">
+                <Volume2 size={11} /> speaking…
+              </p>
+            )}
+          </div>
+
+          <AnimatePresence mode="wait">
+            {!thinking && options.length > 0 && (
+              <motion.div
+                key={history.length}
+                initial={{ opacity: 0, y: 6 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.25 }}
+                className="mt-2.5 flex flex-wrap gap-2"
+              >
+                {options.map((opt, i) => (
+                  <Button
+                    key={opt}
+                    type="button"
+                    variant="neutral"
+                    size="sm"
+                    className="h-auto whitespace-normal py-2 text-left"
+                    onClick={() => onSay(opt)}
+                  >
+                    <span className="text-[11px] font-bold tabular-nums text-main">
+                      {i + 1}.
+                    </span>
+                    {opt}
+                  </Button>
+                ))}
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          <form
+            className="mt-3 flex items-center gap-2"
+            onSubmit={(e) => {
+              e.preventDefault();
+              const line = draft.trim();
+              if (!line || thinking) return;
+              setDraft("");
+              onSay(line);
             }}
           >
-            <span
-              className="h-1.5 w-1.5 rounded-full"
-              style={{ backgroundColor: MOOD_COLOR[mood] ?? "#7c6d61" }}
+            <Input
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              placeholder={`Say anything to ${npc.name}…`}
+              className="min-w-0 flex-1 rounded-base"
             />
-            {mood}
-          </span>
-        )}
-        <button
-          onClick={onToggleVoice}
-          className={`ml-auto flex h-8 w-8 items-center justify-center rounded-full transition ${
-            voiceOn ? "bg-primary/10 text-primary" : "bg-ink/6 text-inksoft"
-          }`}
-          title={voiceOn ? "Voice on" : "Voice off"}
-        >
-          {voiceOn ? <Volume2 size={15} /> : <VolumeX size={15} />}
-        </button>
-        <button
-          onClick={onClose}
-          className="rounded-full bg-ink/6 px-3 py-1.5 text-xs font-bold text-inksoft transition hover:bg-ink/10"
-        >
-          Esc · leave
-        </button>
-      </div>
-
-      {/* Transcript (last few turns) */}
-      <div
-        ref={scrollRef}
-        className="no-scrollbar max-h-36 space-y-1.5 overflow-y-auto pb-1"
-      >
-        {history.slice(-6).map((t, i, arr) => {
-          const isLastNpc =
-            t.speaker === "npc" && t.text === lastNpcLine?.text && i === arr.length - 1;
-          return (
-            <p
-              key={`${i}-${t.text.slice(0, 12)}`}
-              className={
-                t.speaker === "npc"
-                  ? "text-[15px] font-medium leading-snug text-ink"
-                  : "text-right text-sm font-semibold text-primary"
-              }
+            <Button
+              type="submit"
+              size="icon"
+              disabled={thinking || !draft.trim()}
             >
-              {isLastNpc ? t.text.slice(0, typed) : t.text}
-            </p>
-          );
-        })}
-        {thinking && (
-          <p className="flex items-center gap-1.5 text-sm font-medium text-inksoft">
-            <span className="animate-breathe inline-block h-1.5 w-1.5 rounded-full bg-primary" />
-            <span
-              className="animate-breathe inline-block h-1.5 w-1.5 rounded-full bg-primary"
-              style={{ animationDelay: "0.15s" }}
-            />
-            <span
-              className="animate-breathe inline-block h-1.5 w-1.5 rounded-full bg-primary"
-              style={{ animationDelay: "0.3s" }}
-            />
-          </p>
-        )}
-        {speaking && !thinking && lastNpcLine && (
-          <p className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-widest text-primary/70">
-            <Volume2 size={11} /> speaking…
-          </p>
-        )}
-      </div>
-
-      {/* Reply options */}
-      <AnimatePresence mode="wait">
-        {!thinking && options.length > 0 && (
-          <motion.div
-            key={history.length}
-            initial={{ opacity: 0, y: 6 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.25 }}
-            className="mt-2.5 flex flex-wrap gap-2"
-          >
-            {options.map((opt, i) => (
-              <button
-                key={opt}
-                onClick={() => onSay(opt)}
-                className="flex items-center gap-2 rounded-lg border border-ink/15 bg-surface px-3 py-2 text-sm font-semibold text-ink transition hover:border-primary hover:text-primary active:translate-y-px"
-              >
-                <span className="text-[11px] font-bold tabular-nums text-primary">
-                  {i + 1}.
-                </span>
-                {opt}
-              </button>
-            ))}
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* Free-text reply */}
-      <form
-        className="mt-3 flex items-center gap-2"
-        onSubmit={(e) => {
-          e.preventDefault();
-          const line = draft.trim();
-          if (!line || thinking) return;
-          setDraft("");
-          onSay(line);
-        }}
-      >
-        <input
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          placeholder={`Say anything to ${npc.name}…`}
-          className="min-w-0 flex-1 rounded-full border border-ink/10 bg-background px-4 py-2.5 text-sm font-medium text-ink outline-none placeholder:text-inksoft/60 focus:border-primary/50"
-        />
-        <button
-          type="submit"
-          disabled={thinking || !draft.trim()}
-          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary text-white shadow-soft transition enabled:hover:brightness-105 enabled:active:scale-95 disabled:opacity-40"
-        >
-          <Send size={15} />
-        </button>
-      </form>
+              <Send size={15} />
+            </Button>
+          </form>
+        </CardContent>
+      </Card>
     </motion.div>
   );
 }

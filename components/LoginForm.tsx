@@ -4,10 +4,16 @@ import { useState, type FormEvent } from "react";
 import { useSearchParams } from "next/navigation";
 import { motion } from "framer-motion";
 import { ArrowRight, Mail } from "lucide-react";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { createClient } from "@/lib/supabase/client";
 
 const EASE_OUT = [0.16, 1, 0.3, 1] as const;
 
+/** Google OAuth + magic-link email sign-in. */
 export function LoginForm() {
   const searchParams = useSearchParams();
   const next = searchParams.get("next") ?? "/";
@@ -68,97 +74,103 @@ export function LoginForm() {
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.5, ease: EASE_OUT }}
     >
-        <p className="mb-6 border-b border-ink/15 pb-3 text-xs font-bold uppercase tracking-widest text-primary">
-          Sign in to play
-        </p>
+      <p className="mb-6 border-b-2 border-border pb-3 text-xs font-bold uppercase tracking-widest text-main">
+        Sign in to play
+      </p>
 
-        <h1 className="font-display text-5xl font-extrabold leading-[0.95] tracking-tight text-ink sm:text-6xl">
-          Kahani
-        </h1>
-        <p className="mt-4 max-w-sm text-base font-medium leading-relaxed text-inksoft">
-          Continue with Google or a magic link — no password needed.
-        </p>
+      <h1 className="font-display text-5xl font-extrabold leading-[0.95] tracking-tight text-foreground sm:text-6xl">
+        Kahani
+      </h1>
+      <p className="mt-4 max-w-sm text-base font-medium leading-relaxed text-inksoft">
+        Continue with Google or a magic link — no password needed.
+      </p>
 
-        {error ? (
-          <p
-            role="alert"
-            className="mt-6 rounded-xl border border-bold/30 bg-bold/5 px-4 py-3 text-sm font-medium text-bold"
-          >
-            {error}
-          </p>
-        ) : null}
+      {error ? (
+        <Alert variant="destructive" className="mt-6">
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      ) : null}
 
-        {sent ? (
-          <div className="mt-10 rounded-2xl border border-ink/10 bg-surface px-5 py-6">
-            <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-full bg-primary/10 text-primary">
+      {sent ? (
+        <Card className="mt-10 gap-0 py-5">
+          <CardContent className="px-5">
+            <div className="mb-3 flex size-10 items-center justify-center rounded-base border-2 border-border bg-main/10 text-main">
               <Mail size={20} strokeWidth={2} />
             </div>
-            <h2 className="font-display text-xl font-bold text-ink">
+            <h2 className="font-display text-xl font-bold text-foreground">
               Check your email
             </h2>
             <p className="mt-2 text-sm font-medium leading-relaxed text-inksoft">
               We sent a sign-in link to{" "}
-              <span className="font-semibold text-ink">{email.trim()}</span>.
-              Open it on this device to continue.
+              <span className="font-semibold text-foreground">
+                {email.trim()}
+              </span>
+              . Open it on this device to continue.
             </p>
-            <button
+            <Button
               type="button"
+              variant="noShadow"
+              className="mt-5 h-auto bg-transparent p-0 text-sm font-bold text-main hover:translate-x-0 hover:translate-y-0 hover:shadow-shadow"
               onClick={() => {
                 setSent(false);
                 setEmail("");
               }}
-              className="mt-5 text-sm font-bold text-primary transition hover:brightness-110"
             >
               Use a different email
-            </button>
-          </div>
-        ) : (
-          <div className="mt-10 flex flex-col gap-4">
-            <button
-              type="button"
-              onClick={signInWithGoogle}
-              disabled={loading !== null}
-              className="flex w-full items-center justify-center gap-2 rounded-full border border-ink/15 bg-surface px-5 py-3 text-sm font-bold text-ink shadow-soft transition enabled:hover:border-ink/30 enabled:active:scale-[0.98] disabled:opacity-50"
-            >
-              <GoogleMark />
-              {loading === "google" ? "Redirecting…" : "Continue with Google"}
-            </button>
+            </Button>
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="mt-10 flex flex-col gap-4">
+          <Button
+            type="button"
+            variant="neutral"
+            className="w-full"
+            onClick={signInWithGoogle}
+            disabled={loading !== null}
+          >
+            <GoogleMark />
+            {loading === "google" ? "Redirecting…" : "Continue with Google"}
+          </Button>
 
-            <div className="flex items-center gap-3 py-1">
-              <div className="h-px flex-1 bg-ink/10" />
-              <span className="text-[11px] font-bold uppercase tracking-widest text-inksoft">
-                or email
-              </span>
-              <div className="h-px flex-1 bg-ink/10" />
-            </div>
-
-            <form onSubmit={signInWithEmail} className="card rounded-2xl p-2">
-              <label htmlFor="email" className="sr-only">
-                Email
-              </label>
-              <input
-                id="email"
-                type="email"
-                required
-                autoComplete="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="you@example.com"
-                className="w-full rounded-xl bg-transparent px-3 py-2.5 text-[15px] font-medium text-ink outline-none placeholder:text-inksoft/50"
-              />
-              <div className="flex justify-end px-1 pb-1 pt-1">
-                <button
-                  type="submit"
-                  disabled={!email.trim() || loading !== null}
-                  className="flex items-center gap-2 rounded-full bg-primary px-5 py-2.5 text-sm font-bold text-white shadow-soft transition enabled:hover:brightness-105 enabled:active:scale-95 disabled:opacity-40"
-                >
-                  {loading === "email" ? "Sending…" : "Send magic link"}
-                  <ArrowRight size={15} />
-                </button>
-              </div>
-            </form>
+          <div className="flex items-center gap-3 py-1">
+            <div className="h-0.5 flex-1 bg-border" />
+            <span className="text-[11px] font-bold uppercase tracking-widest text-inksoft">
+              or email
+            </span>
+            <div className="h-0.5 flex-1 bg-border" />
           </div>
-        )}
+
+          <Card className="gap-0 py-2">
+            <CardContent className="px-2">
+              <form onSubmit={signInWithEmail} className="flex flex-col gap-2">
+                <Label htmlFor="email" className="sr-only">
+                  Email
+                </Label>
+                <Input
+                  id="email"
+                  type="email"
+                  required
+                  autoComplete="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="you@example.com"
+                  className="border-0 shadow-none"
+                />
+                <div className="flex justify-end px-1 pb-1">
+                  <Button
+                    type="submit"
+                    disabled={!email.trim() || loading !== null}
+                  >
+                    {loading === "email" ? "Sending…" : "Send magic link"}
+                    <ArrowRight size={15} />
+                  </Button>
+                </div>
+              </form>
+            </CardContent>
+          </Card>
+        </div>
+      )}
     </motion.div>
   );
 }

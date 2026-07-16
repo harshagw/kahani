@@ -1,90 +1,133 @@
-/* Hallmark · genre: editorial(warm) · scope: game-chrome refinement · theme: custom (terracotta on warm cream)
- * macrostructure: n/a (app chrome over full-bleed 3D scene) · pre-emit critique: P4 H4 E4 S4 R5 V4
- * preserved: Bricolage Grotesque + Plus Jakarta pairing, terracotta/cream palette, game IA
- * removed: ping-dot badge, shimmer skeleton, duplicate engine pills, per-chip shadows */
 @import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
 
 :root {
-  /* Warm cream paper + warm near-black ink (no cool blue-white). */
-  --background: #f6f0e6;
-  --foreground: #2a201a;
+  --border-radius: 5px;
+  --box-shadow-x: 4px;
+  --box-shadow-y: 4px;
+  --reverse-box-shadow-x: -4px;
+  --reverse-box-shadow-y: -4px;
+
+  --heading-font-weight: 700;
+  --base-font-weight: 500;
+
+  /* Neobrutalism default blue */
+  --background: oklch(93.46% 0.0304 254.32);
+  --secondary-background: oklch(100% 0 0);
+  --foreground: oklch(0% 0 0);
+  --main-foreground: oklch(0% 0 0);
+
+  --main: oklch(67.47% 0.1725 259.61);
+  --border: oklch(0% 0 0);
+  --ring: oklch(0% 0 0);
+  --overlay: oklch(0% 0 0 / 0.8);
+
+  --shadow: var(--box-shadow-x) var(--box-shadow-y) 0px 0px var(--border);
+
+  --chart-1: oklch(67.47% 0.1726 259.49);
+  --chart-2: oklch(67.28% 0.2147 24.22);
+  --chart-3: oklch(86.03% 0.176 92.36);
+  --chart-4: oklch(79.76% 0.2044 153.08);
+  --chart-5: oklch(66.34% 0.1806 277.2);
+  --chart-active-dot: #000;
+}
+
+.dark {
+  --background: oklch(29.12% 0.0633 270.86);
+  --secondary-background: oklch(23.93% 0 0);
+  --foreground: oklch(92.49% 0 0);
+  --main-foreground: oklch(0% 0 0);
+
+  --border: oklch(0% 0 0);
+  --ring: oklch(100% 0 0);
+
+  --shadow: var(--box-shadow-x) var(--box-shadow-y) 0px 0px var(--border);
+
+  --chart-active-dot: #fff;
 }
 
 @theme inline {
+  --color-main: var(--main);
   --color-background: var(--background);
+  --color-secondary-background: var(--secondary-background);
   --color-foreground: var(--foreground);
+  --color-main-foreground: var(--main-foreground);
+  --color-border: var(--border);
+  --color-overlay: var(--overlay);
+  --color-ring: var(--ring);
+
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+
   --font-sans: var(--font-sans);
   --font-display: var(--font-display);
 
-  /* Restrained, low-chroma, warm palette (Hallmark playful). */
-  --color-primary: #c8552e; /* terracotta anchor */
-  --color-primary2: #d98a3d; /* warm ochre */
-  --color-ink: #2a201a;
-  --color-inksoft: #7c6d61;
-  --color-surface: #fffdf8;
+  /* Legacy aliases — used by game components mid-migration */
+  --color-primary: var(--main);
+  --color-primary2: var(--chart-3);
+  --color-ink: var(--foreground);
+  --color-inksoft: oklch(55% 0.02 254);
+  --color-surface: var(--secondary-background);
 
-  /* Muted semantic hues — distinguishable, never saturated. */
-  --color-bold: #c04a2f;
-  --color-cautious: #4a7c88;
-  --color-cunning: #6d5f97;
-  --color-kind: #6b8e5a;
+  /* Game semantic hues */
+  --color-bold: oklch(55% 0.18 30);
+  --color-cautious: oklch(55% 0.08 220);
+  --color-cunning: oklch(55% 0.1 290);
+  --color-kind: oklch(55% 0.1 140);
+  --color-health: oklch(55% 0.18 25);
+  --color-clock: oklch(55% 0.1 290);
+  --color-rupees: oklch(65% 0.14 80);
+  --color-karma: oklch(55% 0.08 220);
 
-  --color-health: #b34a44;
-  --color-clock: #6d5f97;
-  --color-rupees: #b3862f;
-  --color-karma: #4a7c88;
+  --spacing-boxShadowX: var(--box-shadow-x);
+  --spacing-boxShadowY: var(--box-shadow-y);
+  --spacing-reverseBoxShadowX: var(--reverse-box-shadow-x);
+  --spacing-reverseBoxShadowY: var(--reverse-box-shadow-y);
+
+  --radius-base: var(--border-radius);
+
+  --shadow-shadow: var(--shadow);
+  --shadow-nav: 4px 4px 0px 0px var(--border);
+
+  --font-weight-base: var(--base-font-weight);
+  --font-weight-heading: var(--heading-font-weight);
+}
+
+@layer base {
+  body {
+    @apply text-foreground font-base;
+    font-family: var(--font-sans), system-ui, sans-serif;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    @apply font-heading;
+  }
 }
 
 html,
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: var(--font-sans), system-ui, sans-serif;
-}
-
-/* Single warm anchor wash — one hue, no purple/blue mesh. */
-body {
-  background-image:
-    radial-gradient(72% 58% at 8% -10%, rgba(200, 85, 46, 0.08), transparent 60%);
-  background-attachment: fixed;
 }
 
 .font-display {
   font-family: var(--font-display), var(--font-sans), sans-serif;
 }
 
-/* Focus is never invisible and never animated in. */
 :focus-visible {
-  outline: 2px solid var(--color-primary);
+  outline: 2px solid var(--main);
   outline-offset: 2px;
   transition: none;
-}
-
-/* ---- Surfaces (no glassmorphism — solid warm surfaces + soft shadow) ---- */
-
-/* Opaque panel that floats over imagery. Legible without frosted blur. */
-.panel {
-  background: var(--color-surface);
-  border: 1px solid rgba(42, 32, 26, 0.07);
-  box-shadow: 0 6px 20px -12px rgba(42, 32, 26, 0.35);
-}
-
-/* Bottom control sheet — solid, soft upward shadow. */
-.sheet {
-  background: var(--color-surface);
-  border-top: 1px solid rgba(42, 32, 26, 0.06);
-  box-shadow: 0 -10px 34px -16px rgba(42, 32, 26, 0.28);
-}
-
-/* Menu / recap card. */
-.card {
-  background: var(--color-surface);
-  border: 1px solid rgba(42, 32, 26, 0.06);
-  box-shadow: 0 8px 24px -14px rgba(200, 85, 46, 0.28);
-}
-
-.shadow-soft {
-  box-shadow: 0 8px 24px -14px rgba(42, 32, 26, 0.3);
 }
 
 /* ---- Animations ---- */
@@ -100,7 +143,6 @@ body {
   animation: kenburns 20s ease-out forwards;
 }
 
-/** Login showcase — minimal zoom so low-res stills aren't magnified into blur. */
 @keyframes kenburns-subtle {
   0% {
     transform: scale(1) translate(0, 0);
@@ -126,7 +168,7 @@ body {
   background: linear-gradient(
     90deg,
     transparent,
-    rgba(200, 85, 46, 0.28),
+    oklch(67.47% 0.1725 259.61 / 0.28),
     transparent
   );
   animation: shimmer 1.6s infinite;
@@ -152,7 +194,6 @@ body {
   display: none;
 }
 
-/* Legible white text when it must sit directly on an image. */
 .text-shadow-soft {
   text-shadow: 0 2px 18px rgba(0, 0, 0, 0.5);
 }

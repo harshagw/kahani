@@ -1,15 +1,13 @@
 import type { Metadata } from "next";
-import { Plus_Jakarta_Sans, Bricolage_Grotesque } from "next/font/google";
+import { Geist, Bricolage_Grotesque } from "next/font/google";
 import "./globals.css";
+import { cn } from "@/lib/utils";
 
-// Refined humanist sans for all UI copy (body face).
-const jakarta = Plus_Jakarta_Sans({
-  variable: "--font-sans",
+const geist = Geist({
   subsets: ["latin"],
-  weight: ["400", "500", "600", "700", "800"],
+  variable: "--font-sans",
 });
 
-// Characterful grotesque display — friendly but sophisticated, not childish.
 const bricolage = Bricolage_Grotesque({
   variable: "--font-display",
   subsets: ["latin"],
@@ -30,7 +28,11 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${jakarta.variable} ${bricolage.variable} h-full antialiased`}
+      className={cn(
+        "h-full antialiased font-sans",
+        geist.variable,
+        bricolage.variable
+      )}
     >
       <body className="min-h-full">{children}</body>
     </html>
