@@ -306,7 +306,7 @@ export function World({ mode, gameId: routeGameId, initialIdea }: WorldProps) {
   const defeatFinalePromise = useRef<Promise<FinaleData | null> | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const musicRef = useRef<MusicEngine | null>(null);
-  /** Last announced track id — the "now playing" toast fires once per theme. */
+  /** Last announced track id, the "now playing" toast fires once per theme. */
   const musicThemeRef = useRef<string | null>(null);
   const voiceOnRef = useRef(voiceOn);
   voiceOnRef.current = voiceOn;

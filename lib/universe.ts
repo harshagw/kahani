@@ -143,7 +143,7 @@ export type GameBible = {
   /**
    * Soundtrack id from the fixed music library (`lib/music.ts`), chosen by
    * the model during bible generation to fit the world's mood. Optional:
-   * older saved games predate it — the client falls back to keyword
+   * older saved games predate it; the client falls back to keyword
    * matching over the bible text.
    */
   musicTheme?: string;

@@ -32,7 +32,7 @@ export type MusicTheme = {
   keywords: string[];
   /**
    * Signature melody: scale degrees played evenly across EVERY bar.
-   * This is what makes each track instantly recognisable — the pads and
+   * This is what makes each track instantly recognisable; the pads and
    * random ornaments only add texture around it.
    */
   motif: number[];
@@ -40,13 +40,13 @@ export type MusicTheme = {
   scale: number[];
   /** MIDI note of the scale root (pads play here, drone an octave below). */
   root: number;
-  /** Seconds per bar — one pad chord per bar. Tempo is the loudest cue. */
+  /** Seconds per bar, one pad chord per bar. Tempo is the loudest cue. */
   barSeconds: number;
   /** Chord loop, each chord a list of scale-degree indices. */
   chords: number[][];
   /** Oscillator shape for the sustained pad chords. */
   padWave: OscillatorType;
-  /** Pad loudness (0-1) — mountain air is mostly drone, bazaar mostly pluck. */
+  /** Pad loudness (0-1), mountain air is mostly drone, bazaar mostly pluck. */
   padLevel: number;
   /** Oscillator shape for the plucked/bell melody notes. */
   melodyWave: OscillatorType;
@@ -64,7 +64,7 @@ export type MusicTheme = {
   echoTime: number;
   /** Echo feedback 0-1 (higher = longer tail). */
   echoFeedback: number;
-  /** Low-pass cutoff in Hz — the overall brightness of the mix. */
+  /** Low-pass cutoff in Hz, the overall brightness of the mix. */
   brightness: number;
   /** Level of the continuous root drone (0 disables it). */
   droneLevel: number;
@@ -90,7 +90,7 @@ export const MUSIC_LIBRARY: MusicTheme[] = [
       "alley", "murder", "mystery", "spy", "thief", "cyber", "gothic",
     ],
     scale: [0, 2, 3, 5, 7, 8, 10], // natural minor
-    root: 41, // F2 — deep and murky
+    root: 41, // F2, deep and murky
     barSeconds: 4.4,
     chords: [
       [0, 2, 4],
@@ -194,7 +194,7 @@ export const MUSIC_LIBRARY: MusicTheme[] = [
       "village", "lake",
     ],
     scale: [0, 2, 4, 7, 9], // major pentatonic
-    root: 55, // G3 — the brightest, most open register
+    root: 55, // G3, the brightest, most open register
     barSeconds: 4.8,
     chords: [
       [0, 2, 4],
@@ -228,7 +228,7 @@ export const MUSIC_LIBRARY: MusicTheme[] = [
       "seance", "occult", "skull", "nightmare",
     ],
     scale: [0, 2, 3, 6, 7, 8, 11], // hungarian minor
-    root: 44, // G#2 — cold and hollow
+    root: 44, // G#2, cold and hollow
     barSeconds: 5.4,
     chords: [
       [0, 2, 4],
@@ -261,7 +261,7 @@ export const MUSIC_LIBRARY: MusicTheme[] = [
       "war", "battle", "army", "warrior", "soldier", "rebel", "conquer",
       "sword", "epic", "dynasty", "maharaja", "raja",
     ],
-    scale: [0, 2, 3, 5, 7, 9, 10], // dorian — heroic minor
+    scale: [0, 2, 3, 5, 7, 9, 10], // dorian, heroic minor
     root: 45, // A2
     barSeconds: 3,
     chords: [
@@ -296,7 +296,7 @@ export const MUSIC_LIBRARY: MusicTheme[] = [
       "dil", "pyaar", "ishq", "beloved", "sweetheart",
     ],
     scale: [0, 2, 4, 5, 7, 9, 11], // major
-    root: 57, // A3 — the warmest, highest register
+    root: 57, // A3, the warmest, highest register
     barSeconds: 4,
     chords: [
       [0, 2, 4],
@@ -320,7 +320,7 @@ export const MUSIC_LIBRARY: MusicTheme[] = [
     pulseLevel: 0,
   },
   {
-    // Neutral wanderer's theme — fallback when no keywords match.
+    // Neutral wanderer's theme, fallback when no keywords match.
     id: "wandering-heart",
     label: "Wanderer's Heart",
     motif: [0, 2, 3, 2], // simple hopeful turn
@@ -352,7 +352,7 @@ export const MUSIC_LIBRARY: MusicTheme[] = [
 ];
 
 /**
- * Look up a library track by id — used when the game bible carries a
+ * Look up a library track by id, used when the game bible carries a
  * model-chosen `musicTheme`. Returns null for unknown/missing ids so the
  * caller can fall back to keyword matching (older saved games).
  */
@@ -374,7 +374,7 @@ function hashText(text: string): number {
 /**
  * Pick the library theme whose keywords best match the world's flavour
  * text (premise + full bible). Worlds are created from free-text ideas, so
- * when no keyword matches, fall back to a **hash of the text** — every
+ * when no keyword matches, fall back to a **hash of the text**: every
  * world still gets a stable theme, but different worlds get different
  * tracks instead of all landing on the same default.
  */
@@ -408,7 +408,7 @@ function degreeToMidi(theme: MusicTheme, degree: number): number {
   return theme.root + octave * 12 + step;
 }
 
-/** Overall music level — audible character, but still under the voice. */
+/** Overall music level: audible character, but still under the voice. */
 const MASTER_LEVEL = 0.22;
 /** Seconds to fade to silence when ducked (NPC starts talking). */
 const DUCK_FADE = 0.35;
@@ -419,14 +419,14 @@ const RESUME_FADE = 1.4;
  * Tiny generative Web Audio performer for a {@link MusicTheme}.
  *
  * Per bar: a swelling pad chord, an optional melody phrase (echoed), an
- * optional hand-drum pulse, plus a continuous root drone — all through a
+ * optional hand-drum pulse, plus a continuous root drone, all through a
  * low-pass filter that sets the theme's brightness. Safe to construct
- * during SSR — it only touches Web Audio on `start()`.
+ * during SSR, since it only touches Web Audio on `start()`.
  */
 export class MusicEngine {
   private ctx: AudioContext | null = null;
   private master: GainNode | null = null;
-  /** Duck/mute stage — ramped to 0 while an NPC speaks or music is off. */
+  /** Duck/mute stage, ramped to 0 while an NPC speaks or music is off. */
   private duck: GainNode | null = null;
   private filter: BiquadFilterNode | null = null;
   private delay: DelayNode | null = null;
@@ -494,7 +494,7 @@ export class MusicEngine {
       window.AudioContext ??
       (window as unknown as { webkitAudioContext?: typeof AudioContext })
         .webkitAudioContext;
-    if (!Ctor) return; // no Web Audio — music silently unavailable
+    if (!Ctor) return; // no Web Audio, music silently unavailable
     const ctx = new Ctor();
     this.ctx = ctx;
 
@@ -595,7 +595,7 @@ export class MusicEngine {
       osc.stop(t + barLen * 1.4);
     }
 
-    // The signature motif plays EVERY bar — the unmistakable identity of
+    // The signature motif plays EVERY bar, the unmistakable identity of
     // the track. Fast themes get short plucks, slow themes long rings.
     const stepLen = barLen / theme.motif.length;
     theme.motif.forEach((motifDegree, i) => {
