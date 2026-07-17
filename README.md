@@ -1,3 +1,9 @@
+<p align="center">
+  <picture>
+    <img src="public/kahani-logo.png" alt="Kahani" height="50">
+  </picture>
+</p>
+
 # Kahani World — describe a scene, walk into it
 
 **An AI game studio that runs while you play.** Type one sentence — *"a

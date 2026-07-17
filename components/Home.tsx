@@ -23,6 +23,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
+import { BrandLogo } from "@/components/BrandLogo";
 import { MAX_CREATE_IDEA_LENGTH } from "@/lib/constants";
 import { createClient } from "@/lib/supabase/client";
 import type {
@@ -133,7 +134,7 @@ export function Home() {
         transition={{ duration: 0.5, ease: EASE_OUT }}
         className="mb-12 border-b-2 border-border pb-6"
       >
-        <div className="mb-4 flex items-end justify-between gap-4">
+        <div className="mb-4 flex items-start justify-between gap-4">
           <p className="text-xs font-bold uppercase tracking-widest text-main">
             Community gallery · saved worlds
           </p>
@@ -147,12 +148,17 @@ export function Home() {
             {signingOut ? "Signing out…" : "Sign out"}
           </Button>
         </div>
-        <h1 className="font-display text-6xl font-extrabold leading-[0.95] tracking-tight text-foreground sm:text-7xl">
-          Kahani
-        </h1>
-        <p className="mt-4 max-w-md text-lg font-semibold text-foreground">
-          Walk worlds others have built — or describe your own.
-        </p>
+        <div className="mt-2 flex flex-col gap-4 sm:flex-row sm:items-end sm:gap-5">
+          <BrandLogo size={60} className="h-18 w-18 shrink-0" />
+          <div>
+            <h1 className="font-display text-6xl font-extrabold leading-[0.95] tracking-tight text-foreground sm:text-7xl">
+              Kahani
+            </h1>
+          </div>
+        </div>
+                    <p className="mt-4 max-w-lg text-lg font-semibold text-foreground">
+              Walk worlds others have built — or describe your own.
+            </p>
       </motion.header>
 
       <motion.section
@@ -314,7 +320,7 @@ export function Home() {
                   ease: EASE_OUT,
                 }}
                 onClick={() => router.push(`/play/${game.id}`)}
-                className="group relative aspect-[4/3] overflow-hidden rounded-base border-2 border-border text-left shadow-shadow transition hover:translate-x-boxShadowX hover:translate-y-boxShadowY hover:shadow-none"
+                className="group relative aspect-4/3 overflow-hidden rounded-base border-2 border-border text-left shadow-shadow transition hover:translate-x-boxShadowX hover:translate-y-boxShadowY hover:shadow-none"
               >
                 {game.thumbnailUrl ? (
                   <img
@@ -325,7 +331,7 @@ export function Home() {
                 ) : (
                   <div className="absolute inset-0 bg-foreground/10" />
                 )}
-                <div className="absolute inset-0 bg-gradient-to-t from-foreground/80 via-foreground/20 to-transparent" />
+                <div className="absolute inset-0 bg-linear-to-t from-foreground/80 via-foreground/20 to-transparent" />
                 <p className="absolute inset-x-0 bottom-0 px-3 pb-3 font-display text-sm font-bold text-white">
                   {game.title}
                 </p>

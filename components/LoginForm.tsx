@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { BrandLogo } from "@/components/BrandLogo";
 import { createClient } from "@/lib/supabase/client";
 
 const EASE_OUT = [0.16, 1, 0.3, 1] as const;
@@ -74,9 +75,12 @@ export function LoginForm() {
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.5, ease: EASE_OUT }}
     >
-      <h1 className="font-display text-6xl font-extrabold leading-[0.95] tracking-tight text-foreground sm:text-7xl">
-        Kahani
-      </h1>
+      <div className="flex items-center gap-2 text-center">
+        <BrandLogo size={72} className="h-16 w-16" />
+        <h1 className="font-display text-6xl font-extrabold leading-[0.95] tracking-tight text-foreground sm:text-7xl">
+          Kahani
+        </h1>
+      </div>
       <p className="mt-3 text-lg font-semibold text-foreground">
         An AI story you play.
       </p>
