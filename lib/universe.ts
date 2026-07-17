@@ -140,6 +140,13 @@ export type GameBible = {
   /** Exactly 3 — room i is guarded by npcs[i] and holds story.clues[i]. */
   rooms: RoomPlan[];
   npcs: NpcPlan[];
+  /**
+   * Soundtrack id from the fixed music library (`lib/music.ts`), chosen by
+   * the model during bible generation to fit the world's mood. Optional:
+   * older saved games predate it — the client falls back to keyword
+   * matching over the bible text.
+   */
+  musicTheme?: string;
 };
 
 /** Which sides of an overworld screen the player can walk off (true = open). */

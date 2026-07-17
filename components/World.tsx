@@ -16,6 +16,7 @@ import {
   DoorOpen,
   Eye,
   Flame,
+  Music,
   Package,
   Search,
   Volume2,
@@ -40,6 +41,7 @@ import type {
   SceneData,
 } from "@/lib/universe";
 import { GEN_CALL_COST, MAX_GAME_TITLE_LENGTH } from "@/lib/constants";
+import { MusicEngine, getMusicTheme, pickMusicTheme } from "@/lib/music";
 import {
   getCachedImage,
   preloadSceneImages,
@@ -281,6 +283,13 @@ export function World({ mode, gameId: routeGameId, initialIdea }: WorldProps) {
   const [ambient, setAmbient] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [voiceOn, setVoiceOn] = useState(true);
+  // Music preference persists across sessions; SSR renders no HUD, so the
+  // client-only lazy read cannot cause a hydration mismatch.
+  const [musicOn, setMusicOn] = useState(
+    () =>
+      typeof window === "undefined" ||
+      localStorage.getItem("kahani-music") !== "off"
+  );
   const [speaking, setSpeaking] = useState(false);
   const [dialogue, setDialogue] = useState<WorldDialogueState | null>(null);
   const [playerPos, setPlayerPos] = useState<{ x: number; y: number } | null>(null);
@@ -296,8 +305,62 @@ export function World({ mode, gameId: routeGameId, initialIdea }: WorldProps) {
   const finalePromise = useRef<Promise<FinaleData | null> | null>(null);
   const defeatFinalePromise = useRef<Promise<FinaleData | null> | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const musicRef = useRef<MusicEngine | null>(null);
+  /** Last announced track id — the "now playing" toast fires once per theme. */
+  const musicThemeRef = useRef<string | null>(null);
   const voiceOnRef = useRef(voiceOn);
   voiceOnRef.current = voiceOn;
+
+  /**
+   * Theme-aware background music (see lib/music.ts): once the world is
+   * playable, pick a library theme from the premise/bible flavour text and
+   * loop it. Disposed on unmount so navigation kills the audio context.
+   */
+  useEffect(() => {
+    if (phase !== "playing" || !premise) return;
+    const engine = (musicRef.current ??= new MusicEngine());
+    // Newer bibles carry a model-chosen track (it read the player's idea,
+    // so it understands mood far better than keywords can). Older saved
+    // games fall back to keyword/hash matching over the bible text.
+    const theme =
+      getMusicTheme(bible?.musicTheme) ??
+      pickMusicTheme(
+        [
+          premise.title,
+          premise.setup,
+          premise.styleBible,
+          bible?.setting,
+          bible?.styleBible,
+          bible?.street?.description,
+          ...(bible?.rooms?.map((r) => `${r.name} ${r.description}`) ?? []),
+        ]
+          .filter(Boolean)
+          .join(" ")
+      );
+    engine.start(theme);
+    engine.setMuted(!musicOn);
+    // Announce the track once so players can tell worlds apart by name.
+    if (musicThemeRef.current !== theme.id) {
+      musicThemeRef.current = theme.id;
+      console.debug(`[music] theme: ${theme.id} (${theme.label})`);
+      const note = `♪ ${theme.label}`;
+      setAmbient(note);
+      setTimeout(() => setAmbient((a) => (a === note ? null : a)), 5000);
+    }
+  }, [phase, premise, bible, musicOn]);
+
+  useEffect(() => () => musicRef.current?.dispose(), []);
+
+  // HUD toggle → mute; persists across sessions.
+  useEffect(() => {
+    musicRef.current?.setMuted(!musicOn);
+    localStorage.setItem("kahani-music", musicOn ? "on" : "off");
+  }, [musicOn]);
+
+  // The issue's one hard rule: music stops while the NPC is talking.
+  useEffect(() => {
+    musicRef.current?.setDucked(speaking);
+  }, [speaking]);
 
   /** Fire-and-forget persist of a generated scene to Storage + Postgres. */
   const saveScene = useCallback((s: SceneData) => {
@@ -1184,6 +1247,14 @@ export function World({ mode, gameId: routeGameId, initialIdea }: WorldProps) {
               <Eye size={15} />
             </Button>
           )}
+          <Button
+            variant={musicOn ? "default" : "neutral"}
+            size="icon"
+            onClick={() => setMusicOn((m) => !m)}
+            title={musicOn ? "Music on" : "Music off"}
+          >
+            <Music size={15} className={musicOn ? "" : "opacity-40"} />
+          </Button>
           <Button
             variant={voiceOn ? "default" : "neutral"}
             size="icon"

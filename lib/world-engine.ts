@@ -285,8 +285,24 @@ const bibleSchema = {
       description:
         "Exactly 3 characters. NPC i lives in room i and guards clue i — their persona must make them a believable keeper of it.",
     },
+    musicTheme: {
+      type: Type.STRING,
+      enum: [
+        "noir-rain",
+        "mountain-air",
+        "bazaar-dusk",
+        "backwater-dawn",
+        "haunted-hollow",
+        "crown-ember",
+        "first-light",
+        "wandering-heart",
+      ],
+      description:
+        "Background music that best fits this world's MOOD: noir-rain = dark urban mystery/crime/rainy night; mountain-air = vast, sacred, lonely, cold; bazaar-dusk = busy, vibrant, playful, market bustle; backwater-dawn = calm water, pastoral, gentle; haunted-hollow = horror, eerie, supernatural dread; crown-ember = epic, royal, war, heroic; first-light = romance, warmth, hope; wandering-heart = neutral adventure when nothing else fits.",
+    },
   },
   required: [
+    "musicTheme",
     "title",
     "setting",
     "styleBible",
