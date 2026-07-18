@@ -29,6 +29,15 @@ Keep types in **one place per layer**. Do not define duplicate shapes inline in 
 - Do not add new `lib/*.ts` files for one-off utilities.
 - Inline logic at the call site when it runs in one place; colocate in an existing domain module (e.g. [`lib/games.ts`](lib/games.ts)) only when reused across multiple routes.
 
+## Server-side retries
+
+Wrap transient-prone outbound calls with the shared retry helper in [`lib/retry.ts`](lib/retry.ts):
+
+- Use `withRetry(fn, DEFAULT_RETRY_OPTS)` for Supabase Storage uploads, external `fetch` calls, and other server I/O that can fail on rate limits, 5xx, or network blips.
+- For Gemini `generateContent`, use [`generateContentWithRetry`](lib/gemini.ts) — do not call `ai().models.generateContent` directly in new code.
+- Keep retry logic in domain libs (`lib/gemini.ts`, `lib/world-engine.ts`, `lib/games.ts`), not in API route handlers.
+- Defaults live in [`lib/constants.ts`](lib/constants.ts): `RETRY_MAX` (3) and `RETRY_BASE_MS` (500).
+
 ## Documentation
 
 - Add **JSDoc** (`/** … */`) on exported functions, types, components, and API route handlers.
