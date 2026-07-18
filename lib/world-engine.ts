@@ -11,6 +11,7 @@ import type {
   PlannedItem,
   Rect,
   SceneData,
+  WalkGrid,
 } from "./universe";
 
 /** Appended to every scene render so the world reads as one retro RPG overworld. */
@@ -35,6 +36,75 @@ const rectSchema = {
 function clampRect(r: Rect): Rect {
   const c = (v: number) => Math.max(0, Math.min(100, Math.round(v)));
   return { x: c(r.x), y: c(r.y), w: Math.max(4, c(r.w)), h: Math.max(4, c(r.h)) };
+}
+
+/* ------------------------------------------------------------------ */
+/* Walkability grid — a coarse road/obstacle mask per overworld screen */
+/* ------------------------------------------------------------------ */
+
+/** Resolution of the per-screen walkability mask (columns × rows). */
+const WALK_COLS = 20;
+const WALK_ROWS = 14;
+
+/**
+ * Turn the vision pass's `walkable` rows (one string of `'1'`/`'0'` per grid
+ * row) into a boolean `WalkGrid`, then apply reachability guardrails so a
+ * coarse mask can never seal the player away from something they must reach.
+ * Anything missing or malformed defaults to walkable — the engine must never
+ * trap the player on a bad model response.
+ */
+function parseWalkGrid(
+  rows: string[] | undefined,
+  edges: EdgeOpenness,
+  hotspots: Hotspot[]
+): WalkGrid {
+  const cells: boolean[] = new Array(WALK_COLS * WALK_ROWS);
+  for (let r = 0; r < WALK_ROWS; r++) {
+    const row = rows?.[r] ?? "";
+    for (let c = 0; c < WALK_COLS; c++) {
+      // Only an explicit '0' blocks; missing/short cells stay walkable.
+      cells[r * WALK_COLS + c] = row[c] !== "0";
+    }
+  }
+
+  const open = (col: number, rowIdx: number) => {
+    if (col < 0 || col >= WALK_COLS || rowIdx < 0 || rowIdx >= WALK_ROWS) return;
+    cells[rowIdx * WALK_COLS + col] = true;
+  };
+
+  // Guardrail 1: keep every open edge's border ring walkable so the player can
+  // always reach the side to cross into the neighboring screen.
+  for (let c = 0; c < WALK_COLS; c++) {
+    if (edges.n) open(c, 0);
+    if (edges.s) open(c, WALK_ROWS - 1);
+  }
+  for (let r = 0; r < WALK_ROWS; r++) {
+    if (edges.w) open(0, r);
+    if (edges.e) open(WALK_COLS - 1, r);
+  }
+
+  // Percent rect → inclusive grid-cell span.
+  const span = (start: number, size: number, count: number) => {
+    const lo = Math.max(0, Math.floor((start / 100) * count));
+    const hi = Math.min(count - 1, Math.floor(((start + size) / 100) * count));
+    return [lo, hi] as const;
+  };
+
+  for (const h of hotspots) {
+    const [c0, c1] = span(h.rect.x, h.rect.w, WALK_COLS);
+    if (h.kind === "building") {
+      // Guardrail 2: carve a walkable doorstep in the row just below the
+      // building so its enter-prompt is always reachable despite blocking.
+      const [, rBottom] = span(h.rect.y, h.rect.h, WALK_ROWS);
+      for (let c = c0; c <= c1; c++) open(c, Math.min(WALK_ROWS - 1, rBottom + 1));
+    } else {
+      // Guardrail 3: items/actions/exits are walked onto — keep them standable.
+      const [r0, r1] = span(h.rect.y, h.rect.h, WALK_ROWS);
+      for (let r = r0; r <= r1; r++) for (let c = c0; c <= c1; c++) open(c, r);
+    }
+  }
+
+  return { cols: WALK_COLS, rows: WALK_ROWS, cells };
 }
 
 /* ------------------------------------------------------------------ */
@@ -473,6 +543,18 @@ const screenVisionSchema = {
       },
       required: ["n", "e", "s", "w"],
     },
+    walkable: {
+      type: Type.ARRAY,
+      items: { type: Type.STRING },
+      description:
+        `A walkability grid covering the whole frame: exactly ${WALK_ROWS} strings, ` +
+        `top row to bottom row. Each string is exactly ${WALK_COLS} characters, left ` +
+        `to right. '1' = open ground the player can stand on (road, path, paving, ` +
+        `grass, dirt, floor); '0' = blocked (a building or its roof, water, cliff, ` +
+        `dense trees, or any solid prop). Use the magenta outlines in IMAGE 2 to place ` +
+        `the blocked cells precisely. MOST cells are '1' — mark '0' only where a real ` +
+        `obstacle sits.`,
+    },
     buildings: {
       type: Type.ARRAY,
       description:
@@ -530,7 +612,7 @@ const screenVisionSchema = {
       },
     },
   },
-  required: ["title", "ambient", "edges", "buildings", "items", "actions"],
+  required: ["title", "ambient", "edges", "walkable", "buildings", "items", "actions"],
 };
 
 /**
@@ -600,7 +682,7 @@ export async function generateScreen(
           roomToPlace !== null
             ? `The frame was painted to contain "${bible.rooms[roomToPlace].name}" — find it and give that building roomIndex ${roomToPlace}.`
             : "",
-          "TASK: catalog what is actually IN these frames. Use the magenta borders in IMAGE 2 to locate each thing precisely; every rect must tightly match the bordered area in percent coordinates (0-100 of frame width/height). Judge each frame edge: open ground continuing = true, water/cliff/dense forest = false. Invent nothing that is not visible.",
+          "TASK: catalog what is actually IN these frames. Use the magenta borders in IMAGE 2 to locate each thing precisely; every rect must tightly match the bordered area in percent coordinates (0-100 of frame width/height). Judge each frame edge: open ground continuing = true, water/cliff/dense forest = false. Fill the `walkable` grid so its blocked ('0') cells overlay the same buildings, water, and props you box above, and open ground stays '1'. Invent nothing that is not visible.",
         ]
           .filter(Boolean)
           .join("\n"),
@@ -619,6 +701,7 @@ export async function generateScreen(
     title: string;
     ambient: string;
     edges: EdgeOpenness;
+    walkable: string[];
     buildings: { name: string; hint: string; roomIndex: number; rect: Rect }[];
     items: { name: string; hint: string; rect: Rect }[];
     actions: {
@@ -685,6 +768,10 @@ export async function generateScreen(
   if (arriveFrom) edges[DIR_META[arriveFrom].opposite] = true;
   if (!edges.n && !edges.e && !edges.s && !edges.w) edges.e = true;
 
+  // Walkability comes last: it depends on the finalized edges and hotspots for
+  // its reachability guardrails (open edges, doorsteps, standable pickups).
+  const walk = parseWalkGrid(spec.walkable, edges, hotspots);
+
   return {
     id,
     kind: "street",
@@ -695,6 +782,7 @@ export async function generateScreen(
     hotspots,
     coord: { x, y },
     edges,
+    walk,
   };
 }
 
