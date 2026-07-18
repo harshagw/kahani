@@ -17,6 +17,11 @@ export const MAX_CREATE_IDEA_LENGTH = 1200;
 /** Max characters for a saved/display game title (first line of user idea). */
 export const MAX_GAME_TITLE_LENGTH = 80;
 
+/** Wall-clock seconds allowed per World play session (client-readable). */
+export const SESSION_TIME_LIMIT_SEC = Number(
+  process.env.NEXT_PUBLIC_SESSION_TIME_LIMIT_SEC ?? "300"
+);
+
 /** API-call budget per generated asset kind (server derivation + client live meter). */
 export const GEN_CALL_COST = {
   universe: 1,

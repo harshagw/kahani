@@ -16,6 +16,7 @@ import {
   DoorOpen,
   Eye,
   Flame,
+  Hourglass,
   Music,
   Package,
   Search,
@@ -40,7 +41,7 @@ import type {
   Hotspot,
   SceneData,
 } from "@/lib/universe";
-import { GEN_CALL_COST, MAX_GAME_TITLE_LENGTH } from "@/lib/constants";
+import { GEN_CALL_COST, MAX_GAME_TITLE_LENGTH, SESSION_TIME_LIMIT_SEC } from "@/lib/constants";
 import { MusicEngine, getMusicTheme, pickMusicTheme } from "@/lib/music";
 import {
   getCachedImage,
@@ -103,6 +104,13 @@ const OPENING_OPTIONS = [
   "Something's wrong here. Talk.",
   "I need your help.",
 ];
+
+/** Format remaining session seconds as `m:ss`. */
+function formatSessionTime(seconds: number): string {
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  return `${m}:${String(s).padStart(2, "0")}`;
+}
 
 /** TTS performance hint derived from NPC role and mood. */
 function voiceStyle(npc: { role?: string } | null, mood?: string): string {
@@ -295,6 +303,8 @@ export function World({ mode, gameId: routeGameId, initialIdea }: WorldProps) {
   const [playerPos, setPlayerPos] = useState<{ x: number; y: number } | null>(null);
   const [knownStreets, setKnownStreets] = useState<MinimapCell[]>([]);
   const [walkedStreets, setWalkedStreets] = useState<string[]>([]);
+  /** Wall-clock session budget; resets each time the player enters a world. */
+  const [secondsLeft, setSecondsLeft] = useState(SESSION_TIME_LIMIT_SEC);
 
   const scenesRef = useRef<Map<string, SceneData>>(new Map());
   const interiorPromises = useRef<Map<string, Promise<SceneData>>>(new Map());
@@ -310,6 +320,8 @@ export function World({ mode, gameId: routeGameId, initialIdea }: WorldProps) {
   const musicThemeRef = useRef<string | null>(null);
   const voiceOnRef = useRef(voiceOn);
   voiceOnRef.current = voiceOn;
+  /** Fires the low-time ambient toast once per session. */
+  const lowTimeWarnedRef = useRef(false);
 
   /**
    * Theme-aware background music (see lib/music.ts): once the world is
@@ -608,6 +620,8 @@ export function World({ mode, gameId: routeGameId, initialIdea }: WorldProps) {
     setPlayerPos(null);
     setKnownStreets([]);
     setWalkedStreets([]);
+    setSecondsLeft(SESSION_TIME_LIMIT_SEC);
+    lowTimeWarnedRef.current = false;
   }, []);
 
   /** Populate refs and state from `GET /api/games/[id]`. */
@@ -707,6 +721,8 @@ export function World({ mode, gameId: routeGameId, initialIdea }: WorldProps) {
       setSpawn(null);
       await ensureSceneReady(origin);
       showScene(origin);
+      setSecondsLeft(SESSION_TIME_LIMIT_SEC);
+      lowTimeWarnedRef.current = false;
       setPhase("playing");
       startSprite(chosen, origin, spriteUrl);
       startFinales(theBible);
@@ -729,6 +745,8 @@ export function World({ mode, gameId: routeGameId, initialIdea }: WorldProps) {
         if (origin) {
           await ensureSceneReady(origin);
           showScene(origin);
+          setSecondsLeft(SESSION_TIME_LIMIT_SEC);
+          lowTimeWarnedRef.current = false;
           setPhase("playing");
           startSprite(game.premise, origin, game.spriteUrl);
           if (game.isOwner) {
@@ -816,6 +834,7 @@ export function World({ mode, gameId: routeGameId, initialIdea }: WorldProps) {
   const onInteract = useCallback(
     async (h: Hotspot) => {
       if (!premise || !scene) return;
+      if (secondsLeft <= 0 || finale || finaleLoading) return;
 
       if (h.kind === "exit") {
         stopVoice();
@@ -917,13 +936,14 @@ export function World({ mode, gameId: routeGameId, initialIdea }: WorldProps) {
         }
       }
     },
-    [bible, ensureSceneReady, prefetchInterior, premise, scene, showScene, speak, stopVoice]
+    [bible, ensureSceneReady, prefetchInterior, premise, scene, showScene, speak, stopVoice, secondsLeft, finale, finaleLoading]
   );
 
   /** Walking off an open edge — confirm before generating; walls for visitors without a neighbor. */
   const onExitEdge = useCallback(
     async (dir: ExitDirection) => {
       if (!bible || !scene?.coord) return;
+      if (secondsLeft <= 0 || finale || finaleLoading) return;
       const { dx, dy, spawn: arriveAt, word } = EDGE_META[dir];
       const nx = scene.coord.x + dx;
       const ny = scene.coord.y + dy;
@@ -938,13 +958,14 @@ export function World({ mode, gameId: routeGameId, initialIdea }: WorldProps) {
       await ensureSceneReady(next, `Heading ${word}`);
       showScene(next);
     },
-    [bible, ensureSceneReady, scene, showScene]
+    [bible, ensureSceneReady, scene, showScene, secondsLeft, finale, finaleLoading]
   );
 
   /** Owner accepted painting the unexplored neighbor. */
   const confirmExplore = useCallback(async () => {
     const pending = pendingExplore;
     if (!pending || !bible || !scene) return;
+    if (secondsLeft <= 0 || finale || finaleLoading) return;
     setPendingExplore(null);
     setWandering(pending.word);
     try {
@@ -958,7 +979,7 @@ export function World({ mode, gameId: routeGameId, initialIdea }: WorldProps) {
     } finally {
       setWandering(null);
     }
-  }, [bible, ensureSceneReady, ensureScreen, pendingExplore, scene, showScene]);
+  }, [bible, ensureSceneReady, ensureScreen, pendingExplore, scene, showScene, secondsLeft, finale, finaleLoading]);
 
   /** Owner declined — stay on the current screen. */
   const cancelExplore = useCallback(() => {
@@ -968,6 +989,7 @@ export function World({ mode, gameId: routeGameId, initialIdea }: WorldProps) {
   const onSay = useCallback(
     async (line: string) => {
       if (!bible || !scene?.npc || !dialogue) return;
+      if (secondsLeft <= 0 || finale || finaleLoading) return;
       const history: DialogueTurn[] = [...dialogue.history, { speaker: "player", text: line }];
       setDialogue({ ...dialogue, history, options: [], thinking: true });
       const clueIndex = scene.clueIndex;
@@ -1035,7 +1057,7 @@ export function World({ mode, gameId: routeGameId, initialIdea }: WorldProps) {
         });
       }
     },
-    [bible, scene, dialogue, heat, cluesFound, speak, addCalls, inventory]
+    [bible, scene, dialogue, heat, cluesFound, speak, addCalls, inventory, secondsLeft, finale, finaleLoading]
   );
 
   const allCluesFound = bible ? cluesFound.every(Boolean) : false;
@@ -1089,6 +1111,41 @@ export function World({ mode, gameId: routeGameId, initialIdea }: WorldProps) {
       runFinale("defeat", hard?.trigger ?? `the ${bible.heatLabel} meter reached 100`);
     }
   }, [heat, bible, finale, finaleLoading, runFinale]);
+
+  /** Pause the session clock while generation/loading overlays block movement. */
+  const timerPaused =
+    entering !== null ||
+    wandering !== null ||
+    pendingExplore !== null ||
+    assetLoading !== null ||
+    finale !== null ||
+    finaleLoading;
+
+  /** Tick the session clock while the player can move freely. */
+  useEffect(() => {
+    if (phase !== "playing" || timerPaused) return;
+    const id = setInterval(() => {
+      setSecondsLeft((s) => (s <= 1 ? 0 : s - 1));
+    }, 1000);
+    return () => clearInterval(id);
+  }, [phase, timerPaused]);
+
+  /** One low-time warning per session. */
+  useEffect(() => {
+    if (secondsLeft === 60 && phase === "playing" && !lowTimeWarnedRef.current) {
+      lowTimeWarnedRef.current = true;
+      const note = "Time is running out…";
+      setAmbient(note);
+      setTimeout(() => setAmbient((a) => (a === note ? null : a)), 4500);
+    }
+  }, [secondsLeft, phase]);
+
+  /** Session over — trigger defeat when the wall clock hits zero. */
+  useEffect(() => {
+    if (secondsLeft === 0 && bible && !finale && !finaleLoading) {
+      runFinale("defeat", "time ran out");
+    }
+  }, [secondsLeft, bible, finale, finaleLoading, runFinale]);
 
   const closeDialogue = useCallback(() => {
     stopVoice();
@@ -1172,6 +1229,23 @@ export function World({ mode, gameId: routeGameId, initialIdea }: WorldProps) {
                 {questHook}
               </p>
             )}
+          </Card>
+          <Card className="flex w-fit flex-row items-center gap-2 px-3 py-1.5">
+            <Hourglass
+              size={12}
+              strokeWidth={2.5}
+              className={secondsLeft <= 60 ? "text-health" : "text-main"}
+            />
+            <span className="text-[10px] font-bold uppercase tracking-widest text-inksoft">
+              Time
+            </span>
+            <span
+              className={`text-[11px] font-bold tabular-nums ${
+                secondsLeft <= 60 ? "text-health" : "text-foreground"
+              }`}
+            >
+              {formatSessionTime(secondsLeft)}
+            </span>
           </Card>
           {inventory.length > 0 && (
             <Card className="flex w-fit max-w-xs flex-row flex-wrap items-center gap-1.5 gap-y-1 px-3 py-1.5">
