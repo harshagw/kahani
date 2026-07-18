@@ -1,11 +1,31 @@
 "use client";
 
 import { useCallback, useEffect, useRef } from "react";
-import type { Hotspot, SceneData } from "@/lib/universe";
+import type { Hotspot, Rect, SceneData } from "@/lib/universe";
 import { getCachedImage, preloadImage } from "@/lib/image-cache";
 
 const SPEED_X = 26; // % of width per second
 const SPEED_Y = 20; // % of height per second
+
+/**
+ * Hotspot kinds that physically block movement — the player routes around
+ * them rather than walking through, so travel follows the open ground (roads,
+ * paths, floors) between them. `exit` and `action` stay passable: the player
+ * must be able to stand on the exit door and at action props to trigger them.
+ */
+const SOLID_KINDS: ReadonlySet<Hotspot["kind"]> = new Set([
+  "building",
+  "npc",
+  "item",
+]);
+
+/** True when a point (percent coordinates) lies inside any solid rect. */
+function pointBlocked(x: number, y: number, solids: readonly Rect[]): boolean {
+  for (const r of solids) {
+    if (x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) return true;
+  }
+  return false;
+}
 
 export type PlayerState = {
   x: number; // 0-100 (% of width)
@@ -141,6 +161,13 @@ export function GameCanvas({
     let lastPositionReport = 0;
     let lastReported = { x: 0, y: 0, moving: false };
 
+    // Solid obstacles for this scene: buildings, NPCs, and objects block the
+    // player. Recomputed whenever the scene changes (this effect re-runs), so
+    // picking up an item — which removes its hotspot — also clears its wall.
+    const solids = scene.hotspots
+      .filter((h) => SOLID_KINDS.has(h.kind))
+      .map((h) => h.rect);
+
     const tick = (now: number) => {
       raf = requestAnimationFrame(tick);
       lastTick = now;
@@ -165,10 +192,12 @@ export function GameCanvas({
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       ctx.imageSmoothingEnabled = false; // crisp pixel-art upscale
 
-      // --- Move on the flat plane (grid collision; slide along walls) ---
+      // --- Move on the flat plane (solid-rect collision; slide along walls) ---
       const p = playerRef.current;
       if (!pausedRef.current) {
         const keys = keysRef.current;
+        const prevX = p.x;
+        const prevY = p.y;
         let vx = 0;
         let vy = 0;
         if (keys["arrowleft"] || keys["a"]) vx -= 1;
@@ -176,10 +205,20 @@ export function GameCanvas({
         if (keys["arrowup"] || keys["w"]) vy -= 1;
         if (keys["arrowdown"] || keys["s"]) vy += 1;
         if (vx !== 0) p.dir = vx > 0 ? 1 : -1;
-        p.moving = vx !== 0 || vy !== 0;
 
-        p.x = Math.max(2, Math.min(98, p.x + vx * SPEED_X * dt));
-        p.y = Math.max(4, Math.min(96, p.y + vy * SPEED_Y * dt));
+        // Resolve each axis independently against solid obstacles so the player
+        // slides along a wall instead of sticking to it. A player already
+        // inside a rect (e.g. spawned onto one) may always move — the block
+        // only applies when a step would carry them into new solid ground.
+        const wasStuck = pointBlocked(p.x, p.y, solids);
+        const nextX = Math.max(2, Math.min(98, p.x + vx * SPEED_X * dt));
+        if (wasStuck || !pointBlocked(nextX, p.y, solids)) p.x = nextX;
+        const nextY = Math.max(4, Math.min(96, p.y + vy * SPEED_Y * dt));
+        if (wasStuck || !pointBlocked(p.x, nextY, solids)) p.y = nextY;
+
+        // Walking is animated only when the player actually advanced, so
+        // pushing into a wall shows an idle stance rather than a moonwalk.
+        p.moving = p.x !== prevX || p.y !== prevY;
 
         // --- Walk off an open edge → the world continues one screen over ---
         const edges = scene.edges;
@@ -257,8 +296,13 @@ export function GameCanvas({
       const X = (pxPct: number) => ox + (pxPct / 100) * dw;
       const Y = (pyPct: number) => oy + (pyPct / 100) * dh;
 
-      // --- Debug overlay (?debug=1): player state ---
+      // --- Debug overlay (?debug=1): player state + collision boxes ---
       if (debugRef.current) {
+        ctx.strokeStyle = "rgba(255,64,64,0.8)";
+        ctx.lineWidth = 1.5;
+        for (const r of solids) {
+          ctx.strokeRect(X(r.x), Y(r.y), (r.w / 100) * dw, (r.h / 100) * dh);
+        }
         ctx.fillStyle = "rgba(0,0,0,0.7)";
         ctx.fillRect(8, ch - 30, 200, 22);
         ctx.fillStyle = "#7CFC9E";
