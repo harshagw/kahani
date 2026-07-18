@@ -57,3 +57,30 @@ Use correct status codes: `200`, `201`, `204`, `401`, `403`, `404`, `422`.
 ## Supabase
 
 Run [`supabase/migrations/0001_games.sql`](supabase/migrations/0001_games.sql) once for game persistence. Set `profiles.is_unlimited = true` for admin accounts that bypass `FREE_GAME_LIMIT`.
+
+## Dev sign-in
+
+When running `pnpm dev`, the login page shows an **email + password** form (gated by `NODE_ENV === "development"` — absent from production builds). Use it to authenticate before testing game flows.
+
+**Cursor cloud secrets** (you configure these; the app does not read them):
+
+| Variable | Purpose |
+| --- | --- |
+| `KAHANI_DEV_EMAIL` | Dev test account email |
+| `KAHANI_DEV_PASSWORD` | Dev test account password |
+
+**Agent workflow:**
+
+1. Ensure the dev server is running (`pnpm dev`).
+2. Read `KAHANI_DEV_EMAIL` and `KAHANI_DEV_PASSWORD` from the environment.
+3. Navigate to `/login`.
+4. Fill the **Development only** email + password form and submit.
+5. You land on `/` with a session and can create or play worlds.
+
+These vars are for agent use only — never add them to production Vercel env or wire them into app code.
+
+**One-time human setup** (dev Supabase project):
+
+- Enable email + password under Authentication → Providers → Email.
+- Create the test user (matching the secrets above) in the Supabase dashboard.
+- Optionally grant unlimited generation: `update public.profiles set is_unlimited = true where id = '<user-uuid>';`

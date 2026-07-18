@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, type FormEvent } from "react";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { motion } from "framer-motion";
 import { ArrowRight, Mail } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -13,24 +13,30 @@ import { BrandLogo } from "@/components/BrandLogo";
 import { createClient } from "@/lib/supabase/client";
 
 const EASE_OUT = [0.16, 1, 0.3, 1] as const;
+const IS_DEV = process.env.NODE_ENV === "development";
 
-/** Google OAuth + magic-link email sign-in. */
+/** Google OAuth, magic-link email, and dev-only password sign-in. */
 export function LoginForm() {
+  const router = useRouter();
   const searchParams = useSearchParams();
   const next = searchParams.get("next") ?? "/";
   const authError = searchParams.get("error") === "auth";
+  const safeNext =
+    next.startsWith("/") && !next.startsWith("//") ? next : "/";
 
   const [email, setEmail] = useState("");
+  const [devEmail, setDevEmail] = useState("");
+  const [devPassword, setDevPassword] = useState("");
   const [sent, setSent] = useState(false);
-  const [loading, setLoading] = useState<"google" | "email" | null>(null);
+  const [loading, setLoading] = useState<"google" | "email" | "password" | null>(
+    null
+  );
   const [error, setError] = useState<string | null>(
     authError ? "Sign-in link expired or was invalid. Try again." : null
   );
 
   const redirectTo = () => {
     const origin = window.location.origin;
-    const safeNext =
-      next.startsWith("/") && !next.startsWith("//") ? next : "/";
     return `${origin}/auth/callback?next=${encodeURIComponent(safeNext)}`;
   };
 
@@ -66,6 +72,26 @@ export function LoginForm() {
     }
     setSent(true);
     setLoading(null);
+  };
+
+  const signInWithPassword = async (e: FormEvent) => {
+    e.preventDefault();
+    const trimmedEmail = devEmail.trim();
+    if (!trimmedEmail || !devPassword) return;
+    setError(null);
+    setLoading("password");
+    const supabase = createClient();
+    const { error: passwordError } = await supabase.auth.signInWithPassword({
+      email: trimmedEmail,
+      password: devPassword,
+    });
+    if (passwordError) {
+      setError(passwordError.message);
+      setLoading(null);
+      return;
+    }
+    router.push(safeNext);
+    router.refresh();
   };
 
   return (
@@ -173,6 +199,67 @@ export function LoginForm() {
               </form>
             </CardContent>
           </Card>
+
+          {IS_DEV ? (
+            <>
+              <div className="flex items-center gap-3 py-1">
+                <div className="h-0.5 flex-1 bg-border" />
+                <span className="text-[11px] font-bold uppercase tracking-widest text-inksoft">
+                  development only
+                </span>
+                <div className="h-0.5 flex-1 bg-border" />
+              </div>
+
+              <Card className="gap-0 border-dashed py-2">
+                <CardContent className="px-2">
+                  <form
+                    onSubmit={signInWithPassword}
+                    className="flex flex-col gap-2"
+                  >
+                    <Label htmlFor="dev-email" className="sr-only">
+                      Email
+                    </Label>
+                    <Input
+                      id="dev-email"
+                      type="email"
+                      required
+                      autoComplete="email"
+                      value={devEmail}
+                      onChange={(e) => setDevEmail(e.target.value)}
+                      placeholder="you@example.com"
+                      className="border-0 shadow-none"
+                    />
+                    <Label htmlFor="dev-password" className="sr-only">
+                      Password
+                    </Label>
+                    <Input
+                      id="dev-password"
+                      type="password"
+                      required
+                      autoComplete="current-password"
+                      value={devPassword}
+                      onChange={(e) => setDevPassword(e.target.value)}
+                      placeholder="Password"
+                      className="border-0 shadow-none"
+                    />
+                    <div className="flex justify-end px-1 pb-1">
+                      <Button
+                        type="submit"
+                        disabled={
+                          !devEmail.trim() ||
+                          !devPassword ||
+                          loading !== null
+                        }
+                      >
+                        {loading === "password" ? "Signing in…" : "Sign in"}
+                        <ArrowRight size={15} />
+                      </Button>
+                    </div>
+                  </form>
+                </CardContent>
+              </Card>
+            </>
+          ) : null}
         </div>
       )}
     </motion.div>
