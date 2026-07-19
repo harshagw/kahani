@@ -1,11 +1,24 @@
 "use client";
 
 import { useCallback, useEffect, useRef } from "react";
-import type { Hotspot, SceneData } from "@/lib/universe";
+import type { Hotspot, SceneData, WalkGrid } from "@/lib/universe";
 import { getCachedImage, preloadImage } from "@/lib/image-cache";
 
 const SPEED_X = 26; // % of width per second
 const SPEED_Y = 20; // % of height per second
+
+/**
+ * True when the walkability mask blocks the point (percent coordinates). The
+ * player's foot is sampled against the grid so painted obstacles — buildings,
+ * water, props — are non-walkable and travel follows the open ground between
+ * them. With no grid (older saved games, interiors) everything is walkable.
+ */
+function cellBlocked(x: number, y: number, walk: WalkGrid | undefined): boolean {
+  if (!walk) return false;
+  const c = Math.min(walk.cols - 1, Math.max(0, Math.floor((x / 100) * walk.cols)));
+  const r = Math.min(walk.rows - 1, Math.max(0, Math.floor((y / 100) * walk.rows)));
+  return !walk.cells[r * walk.cols + c];
+}
 
 export type PlayerState = {
   x: number; // 0-100 (% of width)
@@ -141,6 +154,10 @@ export function GameCanvas({
     let lastPositionReport = 0;
     let lastReported = { x: 0, y: 0, moving: false };
 
+    // Walkability mask for this scene (undefined on interiors and pre-grid
+    // saved games → free movement). Read once; it is immutable per scene.
+    const walk = scene.walk;
+
     const tick = (now: number) => {
       raf = requestAnimationFrame(tick);
       lastTick = now;
@@ -165,10 +182,12 @@ export function GameCanvas({
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       ctx.imageSmoothingEnabled = false; // crisp pixel-art upscale
 
-      // --- Move on the flat plane (grid collision; slide along walls) ---
+      // --- Move on the flat plane (walkability collision; slide along walls) ---
       const p = playerRef.current;
       if (!pausedRef.current) {
         const keys = keysRef.current;
+        const prevX = p.x;
+        const prevY = p.y;
         let vx = 0;
         let vy = 0;
         if (keys["arrowleft"] || keys["a"]) vx -= 1;
@@ -176,10 +195,20 @@ export function GameCanvas({
         if (keys["arrowup"] || keys["w"]) vy -= 1;
         if (keys["arrowdown"] || keys["s"]) vy += 1;
         if (vx !== 0) p.dir = vx > 0 ? 1 : -1;
-        p.moving = vx !== 0 || vy !== 0;
 
-        p.x = Math.max(2, Math.min(98, p.x + vx * SPEED_X * dt));
-        p.y = Math.max(4, Math.min(96, p.y + vy * SPEED_Y * dt));
+        // Resolve each axis independently against the walkability mask so the
+        // player slides along a wall instead of sticking to it. A player who
+        // is already on a blocked cell (e.g. spawned onto one) may always
+        // move — the block only applies when a step enters new blocked ground.
+        const wasStuck = cellBlocked(p.x, p.y, walk);
+        const nextX = Math.max(2, Math.min(98, p.x + vx * SPEED_X * dt));
+        if (wasStuck || !cellBlocked(nextX, p.y, walk)) p.x = nextX;
+        const nextY = Math.max(4, Math.min(96, p.y + vy * SPEED_Y * dt));
+        if (wasStuck || !cellBlocked(p.x, nextY, walk)) p.y = nextY;
+
+        // Walking is animated only when the player actually advanced, so
+        // pushing into a wall shows an idle stance rather than a moonwalk.
+        p.moving = p.x !== prevX || p.y !== prevY;
 
         // --- Walk off an open edge → the world continues one screen over ---
         const edges = scene.edges;
@@ -257,8 +286,20 @@ export function GameCanvas({
       const X = (pxPct: number) => ox + (pxPct / 100) * dw;
       const Y = (pyPct: number) => oy + (pyPct / 100) * dh;
 
-      // --- Debug overlay (?debug=1): player state ---
+      // --- Debug overlay (?debug=1): player state + blocked walk-cells ---
       if (debugRef.current) {
+        if (walk) {
+          ctx.fillStyle = "rgba(255,64,64,0.28)";
+          const cw2 = dw / walk.cols;
+          const ch2 = dh / walk.rows;
+          for (let r = 0; r < walk.rows; r++) {
+            for (let c = 0; c < walk.cols; c++) {
+              if (!walk.cells[r * walk.cols + c]) {
+                ctx.fillRect(ox + c * cw2, oy + r * ch2, cw2, ch2);
+              }
+            }
+          }
+        }
         ctx.fillStyle = "rgba(0,0,0,0.7)";
         ctx.fillRect(8, ch - 30, 200, 22);
         ctx.fillStyle = "#7CFC9E";

@@ -152,6 +152,17 @@ export type GameBible = {
 /** Which sides of an overworld screen the player can walk off (true = open). */
 export type EdgeOpenness = { n: boolean; e: boolean; s: boolean; w: boolean };
 
+/**
+ * Coarse walkability mask over a screen's frame, sampled at the player's foot
+ * to keep travel on open ground (roads, paths, floors) and off obstacles.
+ * `cells` is row-major (`cells[row * cols + col]`); `true` = walkable.
+ */
+export type WalkGrid = {
+  cols: number;
+  rows: number;
+  cells: boolean[];
+};
+
 export type SceneData = {
   id: string;
   kind: "street" | "interior";
@@ -172,6 +183,8 @@ export type SceneData = {
   edges?: EdgeOpenness;
   /** The engine's eyes: the frame with model-traced borders (data URL). */
   annotated?: string;
+  /** Overworld screens: walkability mask so obstacles block movement. */
+  walk?: WalkGrid;
 };
 
 export type DialogueTurn = {
