@@ -66,11 +66,11 @@ import { Card, CardContent } from "@/components/ui/card";
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Progress } from "@/components/ui/progress";
+import { BOOT_PROGRESS, LoadingBlock } from "@/components/LoadingBlock";
 import { GameCanvas, type ExitDirection, type PlayerState } from "./GameCanvas";
 import { DialogueBox } from "./DialogueBox";
 import {
@@ -1203,14 +1203,11 @@ export function World({ mode, gameId: routeGameId, initialIdea }: WorldProps) {
               {premise?.title ?? bible?.title ?? "Building your world"}
             </h2>
             <div className="mt-5 border-t-2 border-border pt-4">
-              <p className="text-sm font-semibold text-foreground">
-                {bootStatus}
-              </p>
-              <p className="mt-2 text-xs font-medium leading-relaxed text-inksoft">
-                universe · story · scene · character · interiors · voices — all
-                generated live
-                {genCalls > 0 ? ` (${genCalls} calls so far)` : ""}
-              </p>
+              <LoadingBlock
+                label={bootStatus}
+                value={BOOT_PROGRESS[bootStatus] ?? 20}
+                detail={`universe · story · scene · character · interiors · voices — all generated live${genCalls > 0 ? ` (${genCalls} calls so far)` : ""}`}
+              />
               {error && (
                 <Alert variant="destructive" className="mt-3">
                   <AlertDescription>{error}</AlertDescription>
@@ -1436,10 +1433,7 @@ export function World({ mode, gameId: routeGameId, initialIdea }: WorldProps) {
             <DialogTitle className="text-center font-display text-xl">
               {assetLoading}
             </DialogTitle>
-            <DialogDescription className="flex items-center justify-center gap-1.5 text-center">
-              <span className="animate-breathe inline-block size-1.5 rounded-full bg-main" />
-              stepping through…
-            </DialogDescription>
+            <LoadingBlock label="" detail="stepping through…" className="mt-2" />
           </DialogHeader>
         </DialogContent>
       </Dialog>
@@ -1472,10 +1466,11 @@ export function World({ mode, gameId: routeGameId, initialIdea }: WorldProps) {
             <DialogTitle className="text-center font-display text-xl">
               Wandering {wandering}…
             </DialogTitle>
-            <DialogDescription className="flex items-center justify-center gap-1.5 text-center">
-              <span className="animate-breathe inline-block size-1.5 rounded-full bg-main" />
-              painting the next screen · tracing it · reading it
-            </DialogDescription>
+            <LoadingBlock
+              label=""
+              detail="painting the next screen · tracing it · reading it"
+              className="mt-2"
+            />
           </DialogHeader>
         </DialogContent>
       </Dialog>
@@ -1486,10 +1481,7 @@ export function World({ mode, gameId: routeGameId, initialIdea }: WorldProps) {
             <DialogTitle className="text-center font-display text-xl">
               {entering}
             </DialogTitle>
-            <DialogDescription className="flex items-center justify-center gap-1.5 text-center">
-              <span className="animate-breathe inline-block size-1.5 rounded-full bg-main" />
-              stepping inside…
-            </DialogDescription>
+            <LoadingBlock label="" detail="stepping inside…" className="mt-2" />
           </DialogHeader>
         </DialogContent>
       </Dialog>

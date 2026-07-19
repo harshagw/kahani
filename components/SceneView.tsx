@@ -10,6 +10,7 @@ import type { Premise, Scene } from "@/lib/types";
 import { MAX_TURNS } from "@/lib/constants";
 import { TAG_META, type Choice, type Stats } from "@/lib/stats";
 import { Hud } from "./Hud";
+import { LoadingBlock } from "./LoadingBlock";
 import { InstantIcon, PREMISE_ICON, TAG_ICON } from "./icons";
 
 const EASE_OUT = [0.16, 1, 0.3, 1] as const;
@@ -355,7 +356,6 @@ function FirstLoad({
   const Icon = PREMISE_ICON[premise.id];
   return (
     <div className="relative flex min-h-dvh w-full flex-col items-center justify-center px-6 text-center">
-      <div className="shimmer relative mb-8 h-1.5 w-44 overflow-hidden rounded-full bg-foreground/10" />
       <Card className="flex size-20 items-center justify-center text-main">
         {Icon ? <Icon size={34} strokeWidth={2} /> : null}
       </Card>
@@ -372,12 +372,7 @@ function FirstLoad({
           </Button>
         </div>
       ) : (
-        <p className="mt-3 flex items-center gap-2 text-sm font-semibold text-inksoft">
-          <Dot delay={0} />
-          <Dot delay={0.15} />
-          <Dot delay={0.3} />
-          <span className="ml-1">Setting the scene…</span>
-        </p>
+        <LoadingBlock label="Setting the scene…" className="mt-3 w-44" />
       )}
     </div>
   );
