@@ -171,9 +171,9 @@ export function LoginForm() {
             <div className="h-0.5 flex-1 bg-border" />
           </div>
 
-          <Card className="gap-0 py-2">
-            <CardContent className="px-2">
-              <form onSubmit={signInWithEmail} className="flex flex-col gap-2">
+          <form onSubmit={signInWithEmail} className="flex flex-col gap-3">
+            <Card className="gap-0 py-2">
+              <CardContent className="px-2">
                 <Label htmlFor="email" className="sr-only">
                   Email
                 </Label>
@@ -187,18 +187,17 @@ export function LoginForm() {
                   placeholder="you@example.com"
                   className="border-0 shadow-none"
                 />
-                <div className="flex justify-end px-1 pb-1">
-                  <Button
-                    type="submit"
-                    disabled={!email.trim() || loading !== null}
-                  >
-                    {loading === "email" ? "Sending…" : "Send magic link"}
-                    <ArrowRight size={15} />
-                  </Button>
-                </div>
-              </form>
-            </CardContent>
-          </Card>
+              </CardContent>
+            </Card>
+            <Button
+              type="submit"
+              className="w-full"
+              disabled={!email.trim() || loading !== null}
+            >
+              {loading === "email" ? "Sending…" : "Send magic link"}
+              <ArrowRight size={15} />
+            </Button>
+          </form>
 
           {IS_DEV ? (
             <>
@@ -210,12 +209,12 @@ export function LoginForm() {
                 <div className="h-0.5 flex-1 bg-border" />
               </div>
 
-              <Card className="gap-0 border-dashed py-2">
-                <CardContent className="px-2">
-                  <form
-                    onSubmit={signInWithPassword}
-                    className="flex flex-col gap-2"
-                  >
+              <form
+                onSubmit={signInWithPassword}
+                className="flex flex-col gap-3"
+              >
+                <Card className="gap-0 border-dashed py-2">
+                  <CardContent className="flex flex-col gap-2 px-2">
                     <Label htmlFor="dev-email" className="sr-only">
                       Email
                     </Label>
@@ -242,22 +241,19 @@ export function LoginForm() {
                       placeholder="Password"
                       className="border-0 shadow-none"
                     />
-                    <div className="flex justify-end px-1 pb-1">
-                      <Button
-                        type="submit"
-                        disabled={
-                          !devEmail.trim() ||
-                          !devPassword ||
-                          loading !== null
-                        }
-                      >
-                        {loading === "password" ? "Signing in…" : "Sign in"}
-                        <ArrowRight size={15} />
-                      </Button>
-                    </div>
-                  </form>
-                </CardContent>
-              </Card>
+                  </CardContent>
+                </Card>
+                <Button
+                  type="submit"
+                  className="w-full"
+                  disabled={
+                    !devEmail.trim() || !devPassword || loading !== null
+                  }
+                >
+                  {loading === "password" ? "Signing in…" : "Sign in"}
+                  <ArrowRight size={15} />
+                </Button>
+              </form>
             </>
           ) : null}
         </div>

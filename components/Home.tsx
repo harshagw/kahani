@@ -179,33 +179,36 @@ export function Home() {
             </CardContent>
           </Card>
         ) : quota.canCreate ? (
-          <Card className="gap-0 py-2">
-            <CardContent className="px-2">
-              <Textarea
-                value={idea}
-                onChange={(e) => setIdea(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) startCreate();
-                }}
-                maxLength={MAX_CREATE_IDEA_LENGTH}
-                rows={3}
-                placeholder="e.g. A rain-flooded night market in Mumbai. I'm a courier carrying a sealed tiffin box someone will kill for…"
-                className="resize-none border-0 shadow-none"
-              />
-              <div className="flex items-center justify-between px-2 pb-1">
-                <span className="text-[11px] font-medium text-inksoft/70">
-                  ⌘↵ to build ·{" "}
-                  {quota.unlimited
-                    ? "unlimited"
-                    : `${quota.used}/${quota.limit} used`}
-                </span>
-                <Button onClick={startCreate} disabled={!idea.trim()}>
-                  Build a new world
-                  <ArrowRight size={15} />
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
+          <div className="flex flex-col gap-3">
+            <Card className="gap-0 py-2">
+              <CardContent className="px-2">
+                <Textarea
+                  value={idea}
+                  onChange={(e) => setIdea(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && (e.metaKey || e.ctrlKey))
+                      startCreate();
+                  }}
+                  maxLength={MAX_CREATE_IDEA_LENGTH}
+                  rows={3}
+                  placeholder="e.g. A rain-flooded night market in Mumbai. I'm a courier carrying a sealed tiffin box someone will kill for…"
+                  className="resize-none border-0 shadow-none"
+                />
+              </CardContent>
+            </Card>
+            <div className="flex items-center justify-between gap-3 px-1">
+              <span className="text-[11px] font-medium text-inksoft/70">
+                ⌘↵ to build ·{" "}
+                {quota.unlimited
+                  ? "unlimited"
+                  : `${quota.used}/${quota.limit} used`}
+              </span>
+              <Button onClick={startCreate} disabled={!idea.trim()}>
+                Build a new world
+                <ArrowRight size={15} />
+              </Button>
+            </div>
+          </div>
         ) : (
           <Card className="gap-0 py-5">
             <CardContent className="px-4">

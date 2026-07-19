@@ -80,30 +80,32 @@ export function Landing({ onStart }: { onStart: (idea: string) => void }) {
         >
           Your opening scene
         </Label>
-        <Card className="gap-0 py-2">
-          <CardContent className="px-2">
-            <Textarea
-              id="scene-idea"
-              value={idea}
-              onChange={(e) => setIdea(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) submit();
-              }}
-              rows={4}
-              placeholder="e.g. A rain-flooded night market in Mumbai. I'm a courier carrying a sealed tiffin box someone will kill for…"
-              className="resize-none border-0 shadow-none"
-            />
-            <div className="flex items-center justify-between px-2 pb-1">
-              <span className="text-[11px] font-medium text-inksoft/70">
-                Any place, any era, any story — ⌘↵ to start
-              </span>
-              <Button onClick={submit} disabled={!idea.trim()}>
-                Build my world
-                <ArrowRight size={15} />
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
+        <div className="flex flex-col gap-3">
+          <Card className="gap-0 py-2">
+            <CardContent className="px-2">
+              <Textarea
+                id="scene-idea"
+                value={idea}
+                onChange={(e) => setIdea(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) submit();
+                }}
+                rows={4}
+                placeholder="e.g. A rain-flooded night market in Mumbai. I'm a courier carrying a sealed tiffin box someone will kill for…"
+                className="resize-none border-0 shadow-none"
+              />
+            </CardContent>
+          </Card>
+          <div className="flex items-center justify-between gap-3 px-1">
+            <span className="text-[11px] font-medium text-inksoft/70">
+              Any place, any era, any story — ⌘↵ to start
+            </span>
+            <Button onClick={submit} disabled={!idea.trim()}>
+              Build my world
+              <ArrowRight size={15} />
+            </Button>
+          </div>
+        </div>
 
         <p className="mb-1 mt-8 text-xs font-bold uppercase tracking-widest text-inksoft">
           Or start from one of these
