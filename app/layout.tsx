@@ -15,7 +15,7 @@ const bricolage = Bricolage_Grotesque({
 });
 
 export const metadata: Metadata = {
-  title: "Kahani — an AI story you play",
+  title: "Kahani - an AI story you play",
   description:
     "A fast, image-first choice game set in India. Every scene is generated in real time.",
 };
