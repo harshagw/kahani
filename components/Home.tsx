@@ -24,15 +24,10 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardFooter } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
 import { BrandLogo } from "@/components/BrandLogo";
-import { LoadingBlock } from "@/components/LoadingBlock";
-import { Skeleton } from "@/components/ui/skeleton";
+import { HomePageSkeleton } from "@/components/HomePageSkeleton";
 import { MAX_CREATE_IDEA_LENGTH } from "@/lib/constants";
 import { createClient } from "@/lib/supabase/client";
-import type {
-  GameListItem,
-  GenerationQuota,
-  ProfileResponse,
-} from "@/lib/types/client";
+import type { GameListItem } from "@/lib/types/client";
 
 const EASE_OUT = [0.16, 1, 0.3, 1] as const;
 
@@ -50,7 +45,6 @@ export function Home() {
   const [idea, setIdea] = useState("");
   const [games, setGames] = useState<GameListItem[]>([]);
   const [userId, setUserId] = useState<string | null>(null);
-  const [quota, setQuota] = useState<GenerationQuota | null>(null);
   const [loading, setLoading] = useState(true);
   const [signingOut, setSigningOut] = useState(false);
   const [creatingIdea, setCreatingIdea] = useState<string | null>(null);
@@ -67,12 +61,8 @@ export function Home() {
       } = await supabase.auth.getUser();
       setUserId(user?.id ?? null);
 
-      const [gameList, profile] = await Promise.all([
-        request<GameListItem[]>("/api/games"),
-        request<ProfileResponse>("/api/profile"),
-      ]);
+      const gameList = await request<GameListItem[]>("/api/games");
       setGames(gameList);
-      setQuota(profile.generation);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load gallery.");
     } finally {
@@ -89,7 +79,7 @@ export function Home() {
 
   const startCreate = () => {
     const text = idea.trim();
-    if (!text || !quota?.canCreate) return;
+    if (!text) return;
     setCreatingIdea(text);
   };
 
@@ -116,13 +106,6 @@ export function Home() {
       setDeleteTarget(null);
     }
   };
-
-  const quotaMessage =
-    quota && !quota.canCreate
-      ? quota.limit === 0
-        ? "Creating new worlds is currently disabled."
-        : "You've used your free world."
-      : null;
 
   if (creatingIdea) {
     return <World mode="create" initialIdea={creatingIdea} />;
@@ -163,188 +146,159 @@ export function Home() {
             </p>
       </motion.header>
 
-      <motion.section
-        initial={{ opacity: 0, y: 12 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.45, delay: 0.06, ease: EASE_OUT }}
-        className="mb-14"
-      >
-        <p className="mb-2 text-xs font-bold uppercase tracking-widest text-inksoft">
-          Create
-        </p>
-        {loading || quota === null ? (
-          <Card className="gap-0 py-5">
-            <CardContent className="px-4">
-              <LoadingBlock label="Checking your quota…" />
-            </CardContent>
-          </Card>
-        ) : quota.canCreate ? (
-          <Card>
-            <CardContent>
-              <Textarea
-                value={idea}
-                onChange={(e) => setIdea(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && (e.metaKey || e.ctrlKey))
-                    startCreate();
-                }}
-                maxLength={MAX_CREATE_IDEA_LENGTH}
-                rows={3}
-                placeholder="e.g. A rain-flooded night market in Mumbai. I'm a courier carrying a sealed tiffin box someone will kill for…"
-                className="resize-none"
-              />
-            </CardContent>
-            <CardFooter className="flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-              <span className="text-[11px] font-medium text-inksoft/70">
-                ⌘↵ to build ·{" "}
-                {quota.unlimited
-                  ? "unlimited"
-                  : `${quota.used}/${quota.limit} used`}
-              </span>
-              <Button onClick={startCreate} disabled={!idea.trim()}>
-                Build a new world
-                <ArrowRight size={15} />
-              </Button>
-            </CardFooter>
-          </Card>
-        ) : (
-          <Card className="gap-0 py-5">
-            <CardContent className="px-4">
-              <p className="text-sm font-semibold text-foreground">
-                {quotaMessage}
-              </p>
-              {mine.length > 0 && (
-                <Button
-                  type="button"
-                  variant="noShadow"
-                  className="mt-3 h-auto bg-transparent p-0 text-sm font-bold text-main hover:translate-x-0 hover:translate-y-0 hover:shadow-shadow"
-                  onClick={() => router.push(`/play/${mine[0].id}`)}
-                >
-                  Continue your world →
-                </Button>
-              )}
-            </CardContent>
-          </Card>
-        )}
-      </motion.section>
-
       {error && (
         <Alert variant="destructive" className="mb-8">
           <AlertDescription>{error}</AlertDescription>
         </Alert>
       )}
 
-      {mine.length > 0 && (
-        <section className="mb-14">
-          <p className="mb-1 text-xs font-bold uppercase tracking-widest text-inksoft">
-            Your world{mine.length > 1 ? "s" : ""}
-          </p>
-          <ul>
-            {mine.map((game, i) => (
-              <motion.li
-                key={game.id}
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{
-                  duration: 0.4,
-                  delay: 0.1 + i * 0.05,
-                  ease: EASE_OUT,
-                }}
-              >
-                <div className="group flex w-full items-center gap-4 border-t-2 border-border py-4">
-                  <div className="h-14 w-20 shrink-0 overflow-hidden rounded-base border-2 border-border bg-foreground/10">
+      {loading ? (
+        <HomePageSkeleton />
+      ) : (
+        <>
+          <motion.section
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.45, delay: 0.06, ease: EASE_OUT }}
+            className="mb-14"
+          >
+            <p className="mb-2 text-xs font-bold uppercase tracking-widest text-inksoft">
+              Create
+            </p>
+            <Card>
+              <CardContent>
+                <Textarea
+                  value={idea}
+                  onChange={(e) => setIdea(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && (e.metaKey || e.ctrlKey))
+                      startCreate();
+                  }}
+                  maxLength={MAX_CREATE_IDEA_LENGTH}
+                  rows={3}
+                  placeholder="e.g. A rain-flooded night market in Mumbai. I'm a courier carrying a sealed tiffin box someone will kill for…"
+                  className="resize-none"
+                />
+              </CardContent>
+              <CardFooter className="flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <span className="text-[11px] font-medium text-inksoft/70">
+                  ⌘↵ to build
+                </span>
+                <Button onClick={startCreate} disabled={!idea.trim()}>
+                  Build a new world
+                  <ArrowRight size={15} />
+                </Button>
+              </CardFooter>
+            </Card>
+          </motion.section>
+
+          {mine.length > 0 && (
+            <section className="mb-14">
+              <p className="mb-1 text-xs font-bold uppercase tracking-widest text-inksoft">
+                Your world{mine.length > 1 ? "s" : ""}
+              </p>
+              <ul>
+                {mine.map((game, i) => (
+                  <motion.li
+                    key={game.id}
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{
+                      duration: 0.4,
+                      delay: 0.1 + i * 0.05,
+                      ease: EASE_OUT,
+                    }}
+                  >
+                    <div className="group flex w-full items-center gap-4 border-t-2 border-border py-4">
+                      <div className="h-14 w-20 shrink-0 overflow-hidden rounded-base border-2 border-border bg-foreground/10">
+                        {game.thumbnailUrl ? (
+                          <img
+                            src={game.thumbnailUrl}
+                            alt=""
+                            className="h-full w-full object-cover"
+                          />
+                        ) : (
+                          <div className="flex h-full w-full items-center justify-center text-xs font-bold text-inksoft">
+                            …
+                          </div>
+                        )}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <h2 className="font-display text-lg font-bold text-foreground">
+                          {game.title}
+                        </h2>
+                        <p className="text-xs font-medium text-inksoft">
+                          {new Date(game.createdAt).toLocaleDateString()}
+                        </p>
+                      </div>
+                      <Button
+                        type="button"
+                        size="sm"
+                        onClick={() => router.push(`/play/${game.id}`)}
+                      >
+                        Continue
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="neutral"
+                        size="icon"
+                        className="shrink-0 text-inksoft hover:text-health"
+                        onClick={() => setDeleteTarget(game.id)}
+                        title="Delete world"
+                      >
+                        <Trash2 size={16} />
+                      </Button>
+                    </div>
+                  </motion.li>
+                ))}
+              </ul>
+            </section>
+          )}
+
+          <section>
+            <p className="mb-4 text-xs font-bold uppercase tracking-widest text-inksoft">
+              Community worlds
+            </p>
+            {gallery.length === 0 ? (
+              <p className="text-sm font-medium text-inksoft">
+                No community worlds yet — be the first to build one.
+              </p>
+            ) : (
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:gap-4">
+                {gallery.map((game, i) => (
+                  <motion.button
+                    key={game.id}
+                    type="button"
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{
+                      duration: 0.4,
+                      delay: 0.12 + i * 0.04,
+                      ease: EASE_OUT,
+                    }}
+                    onClick={() => router.push(`/play/${game.id}`)}
+                    className="group relative aspect-4/3 overflow-hidden rounded-base border-2 border-border text-left shadow-shadow transition hover:translate-x-boxShadowX hover:translate-y-boxShadowY hover:shadow-none"
+                  >
                     {game.thumbnailUrl ? (
                       <img
                         src={game.thumbnailUrl}
                         alt=""
-                        className="h-full w-full object-cover"
+                        className="absolute inset-0 h-full w-full object-cover transition duration-500 group-hover:scale-105"
                       />
                     ) : (
-                      <div className="flex h-full w-full items-center justify-center text-xs font-bold text-inksoft">
-                        …
-                      </div>
+                      <div className="absolute inset-0 bg-foreground/10" />
                     )}
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <h2 className="font-display text-lg font-bold text-foreground">
+                    <div className="absolute inset-0 bg-linear-to-t from-foreground/80 via-foreground/20 to-transparent" />
+                    <p className="absolute inset-x-0 bottom-0 px-3 pb-3 font-display text-sm font-bold text-white">
                       {game.title}
-                    </h2>
-                    <p className="text-xs font-medium text-inksoft">
-                      {new Date(game.createdAt).toLocaleDateString()}
                     </p>
-                  </div>
-                  <Button
-                    type="button"
-                    size="sm"
-                    onClick={() => router.push(`/play/${game.id}`)}
-                  >
-                    Continue
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="neutral"
-                    size="icon"
-                    className="shrink-0 text-inksoft hover:text-health"
-                    onClick={() => setDeleteTarget(game.id)}
-                    title="Delete world"
-                  >
-                    <Trash2 size={16} />
-                  </Button>
-                </div>
-              </motion.li>
-            ))}
-          </ul>
-        </section>
+                  </motion.button>
+                ))}
+              </div>
+            )}
+          </section>
+        </>
       )}
-
-      <section>
-        <p className="mb-4 text-xs font-bold uppercase tracking-widest text-inksoft">
-          Community worlds
-        </p>
-        {loading ? (
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:gap-4">
-            {Array.from({ length: 6 }).map((_, i) => (
-              <Skeleton key={i} className="aspect-4/3 w-full" />
-            ))}
-          </div>
-        ) : gallery.length === 0 ? (
-          <p className="text-sm font-medium text-inksoft">
-            No community worlds yet — be the first to build one.
-          </p>
-        ) : (
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:gap-4">
-            {gallery.map((game, i) => (
-              <motion.button
-                key={game.id}
-                type="button"
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{
-                  duration: 0.4,
-                  delay: 0.12 + i * 0.04,
-                  ease: EASE_OUT,
-                }}
-                onClick={() => router.push(`/play/${game.id}`)}
-                className="group relative aspect-4/3 overflow-hidden rounded-base border-2 border-border text-left shadow-shadow transition hover:translate-x-boxShadowX hover:translate-y-boxShadowY hover:shadow-none"
-              >
-                {game.thumbnailUrl ? (
-                  <img
-                    src={game.thumbnailUrl}
-                    alt=""
-                    className="absolute inset-0 h-full w-full object-cover transition duration-500 group-hover:scale-105"
-                  />
-                ) : (
-                  <div className="absolute inset-0 bg-foreground/10" />
-                )}
-                <div className="absolute inset-0 bg-linear-to-t from-foreground/80 via-foreground/20 to-transparent" />
-                <p className="absolute inset-x-0 bottom-0 px-3 pb-3 font-display text-sm font-bold text-white">
-                  {game.title}
-                </p>
-              </motion.button>
-            ))}
-          </div>
-        )}
-      </section>
 
       <AlertDialog
         open={deleteTarget !== null}
