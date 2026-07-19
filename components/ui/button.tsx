@@ -37,7 +37,9 @@ const buttonVariants = cva(
 
 /**
  * Shared button. `sound` picks the click effect from `lib/sfx.ts`
- * ("click" by default); pass "none" for silent buttons.
+ * ("click" by default); pass "none" for silent buttons. `hoverSound` is
+ * opt-in (unset by default) — pass "hover" on game-UI buttons that should
+ * tick on mouse-over; leave it off elsewhere so forms/nav stay quiet.
  */
 function Button({
   className,
@@ -45,12 +47,15 @@ function Button({
   size,
   asChild = false,
   sound = "click",
+  hoverSound,
   onClick,
+  onMouseEnter,
   ...props
 }: React.ComponentProps<"button"> &
   VariantProps<typeof buttonVariants> & {
     asChild?: boolean
     sound?: SfxName | "none"
+    hoverSound?: SfxName | "none"
   }) {
   const Comp = asChild ? Slot : "button"
 
@@ -59,11 +64,17 @@ function Button({
     onClick?.(e)
   }
 
+  const handleMouseEnter = (e: React.MouseEvent<HTMLButtonElement>) => {
+    if (hoverSound && hoverSound !== "none") playSfx(hoverSound)
+    onMouseEnter?.(e)
+  }
+
   return (
     <Comp
       data-slot="button"
       className={cn(buttonVariants({ variant, size, className }))}
       onClick={handleClick}
+      onMouseEnter={handleMouseEnter}
       {...props}
     />
   )

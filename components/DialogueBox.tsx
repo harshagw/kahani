@@ -128,6 +128,7 @@ export function DialogueBox({
               variant={voiceOn ? "noShadow" : "neutral"}
               size="icon"
               sound={voiceOn ? "toggleOff" : "toggleOn"}
+              hoverSound="hover"
               className={`ml-auto size-8 ${voiceOn ? "bg-main/10 text-main" : ""}`}
               onClick={onToggleVoice}
               title={voiceOn ? "Voice on" : "Voice off"}
@@ -205,6 +206,7 @@ export function DialogueBox({
                     variant="neutral"
                     size="sm"
                     sound="tap"
+                    hoverSound="hover"
                     className="h-auto whitespace-normal py-2 text-left"
                     onClick={() => onSay(opt)}
                   >

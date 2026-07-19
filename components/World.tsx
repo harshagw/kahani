@@ -1341,6 +1341,7 @@ export function World({ mode, gameId: routeGameId, initialIdea }: WorldProps) {
             <Button
               variant={showVision ? "default" : "neutral"}
               size="icon"
+              hoverSound="hover"
               onClick={() => setShowVision((v) => !v)}
               title={
                 showVision
@@ -1355,6 +1356,7 @@ export function World({ mode, gameId: routeGameId, initialIdea }: WorldProps) {
             variant={musicOn ? "default" : "neutral"}
             size="icon"
             sound={musicOn ? "toggleOff" : "toggleOn"}
+            hoverSound="hover"
             onClick={() => setMusicOn((m) => !m)}
             title={musicOn ? "Music on" : "Music off"}
           >
@@ -1364,12 +1366,13 @@ export function World({ mode, gameId: routeGameId, initialIdea }: WorldProps) {
             variant={voiceOn ? "default" : "neutral"}
             size="icon"
             sound={voiceOn ? "toggleOff" : "toggleOn"}
+            hoverSound="hover"
             onClick={() => setVoiceOn((v) => !v)}
             title={voiceOn ? "Voice on" : "Voice off"}
           >
             {voiceOn ? <Volume2 size={15} /> : <VolumeX size={15} />}
           </Button>
-          <Button variant="neutral" size="sm" sound="close" onClick={leaveWorld}>
+          <Button variant="neutral" size="sm" sound="close" hoverSound="hover" onClick={leaveWorld}>
             Leave world
           </Button>
           </div>
