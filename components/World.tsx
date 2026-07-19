@@ -377,19 +377,16 @@ export function World({ mode, gameId: routeGameId, initialIdea }: WorldProps) {
 
   /**
    * Game-event sound effects (issue #21). Watched centrally so every code
-   * path that changes these states gets the same feedback: item pickups
-   * chirp, found clues arpeggiate, errors buzz, conversations open/close.
+   * path that changes these states gets the same feedback: found clues
+   * arpeggiate, errors buzz, conversations open/close. (Item pickups fire
+   * directly in `onInteract` — inferring them from inventory length missed
+   * actions that grant no item or re-grant a held one.)
    */
-  const prevSfxCounts = useRef({ items: 0, clues: 0 });
-  useEffect(() => {
-    const prev = prevSfxCounts.current.items;
-    prevSfxCounts.current.items = inventory.length;
-    if (phase === "playing" && inventory.length > prev) playSfx("pickup");
-  }, [inventory, phase]);
+  const prevClueCount = useRef(0);
   useEffect(() => {
     const found = cluesFound.filter(Boolean).length;
-    const prev = prevSfxCounts.current.clues;
-    prevSfxCounts.current.clues = found;
+    const prev = prevClueCount.current;
+    prevClueCount.current = found;
     if (phase === "playing" && found > prev) playSfx("success");
   }, [cluesFound, phase]);
   useEffect(() => {
@@ -879,6 +876,7 @@ export function World({ mode, gameId: routeGameId, initialIdea }: WorldProps) {
       }
 
       if (h.kind === "item" && h.itemName) {
+        playSfx("pickup");
         setInventory((inv) => (inv.includes(h.itemName!) ? inv : [...inv, h.itemName!]));
         const updated = {
           ...scene,
@@ -892,6 +890,9 @@ export function World({ mode, gameId: routeGameId, initialIdea }: WorldProps) {
       }
 
       if (h.kind === "action") {
+        // An item-granting action gets the pickup chime; a plain action
+        // (drawing water, ringing a bell) still gets a click for feedback.
+        playSfx(h.grantsItem ? "pickup" : "click");
         if (h.grantsItem) {
           const item = h.grantsItem;
           setInventory((inv) => (inv.includes(item) ? inv : [...inv, item]));
