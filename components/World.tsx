@@ -43,6 +43,7 @@ import type {
 } from "@/lib/universe";
 import { GEN_CALL_COST, MAX_GAME_TITLE_LENGTH, SESSION_TIME_LIMIT_SEC } from "@/lib/constants";
 import { MusicEngine, getMusicTheme, pickMusicTheme } from "@/lib/music";
+import { playSfx } from "@/lib/sfx";
 import {
   getCachedImage,
   preloadSceneImages,
@@ -373,6 +374,35 @@ export function World({ mode, gameId: routeGameId, initialIdea }: WorldProps) {
   useEffect(() => {
     musicRef.current?.setDucked(speaking);
   }, [speaking]);
+
+  /**
+   * Game-event sound effects (issue #21). Watched centrally so every code
+   * path that changes these states gets the same feedback: item pickups
+   * chirp, found clues arpeggiate, errors buzz, conversations open/close.
+   */
+  const prevSfxCounts = useRef({ items: 0, clues: 0 });
+  useEffect(() => {
+    const prev = prevSfxCounts.current.items;
+    prevSfxCounts.current.items = inventory.length;
+    if (phase === "playing" && inventory.length > prev) playSfx("pickup");
+  }, [inventory, phase]);
+  useEffect(() => {
+    const found = cluesFound.filter(Boolean).length;
+    const prev = prevSfxCounts.current.clues;
+    prevSfxCounts.current.clues = found;
+    if (phase === "playing" && found > prev) playSfx("success");
+  }, [cluesFound, phase]);
+  useEffect(() => {
+    if (phase === "playing" && error) playSfx("error");
+  }, [error, phase]);
+  const dialogueWasOpen = useRef(false);
+  useEffect(() => {
+    const open = !!dialogue;
+    const was = dialogueWasOpen.current;
+    dialogueWasOpen.current = open;
+    if (phase !== "playing" || open === was) return;
+    playSfx(open ? "open" : "close");
+  }, [dialogue, phase]);
 
   /** Fire-and-forget persist of a generated scene to Storage + Postgres. */
   const saveScene = useCallback((s: SceneData) => {
@@ -1324,6 +1354,7 @@ export function World({ mode, gameId: routeGameId, initialIdea }: WorldProps) {
           <Button
             variant={musicOn ? "default" : "neutral"}
             size="icon"
+            sound={musicOn ? "toggleOff" : "toggleOn"}
             onClick={() => setMusicOn((m) => !m)}
             title={musicOn ? "Music on" : "Music off"}
           >
@@ -1332,12 +1363,13 @@ export function World({ mode, gameId: routeGameId, initialIdea }: WorldProps) {
           <Button
             variant={voiceOn ? "default" : "neutral"}
             size="icon"
+            sound={voiceOn ? "toggleOff" : "toggleOn"}
             onClick={() => setVoiceOn((v) => !v)}
             title={voiceOn ? "Voice on" : "Voice off"}
           >
             {voiceOn ? <Volume2 size={15} /> : <VolumeX size={15} />}
           </Button>
-          <Button variant="neutral" size="sm" onClick={leaveWorld}>
+          <Button variant="neutral" size="sm" sound="close" onClick={leaveWorld}>
             Leave world
           </Button>
           </div>

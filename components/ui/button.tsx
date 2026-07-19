@@ -1,8 +1,11 @@
+"use client"
+
 import { Slot } from "@radix-ui/react-slot"
 import { cva, type VariantProps } from "class-variance-authority"
 
 import * as React from "react"
 
+import { playSfx, type SfxName } from "@/lib/sfx"
 import { cn } from "@/lib/utils"
 
 const buttonVariants = cva(
@@ -32,22 +35,35 @@ const buttonVariants = cva(
   },
 )
 
+/**
+ * Shared button. `sound` picks the click effect from `lib/sfx.ts`
+ * ("click" by default); pass "none" for silent buttons.
+ */
 function Button({
   className,
   variant,
   size,
   asChild = false,
+  sound = "click",
+  onClick,
   ...props
 }: React.ComponentProps<"button"> &
   VariantProps<typeof buttonVariants> & {
     asChild?: boolean
+    sound?: SfxName | "none"
   }) {
   const Comp = asChild ? Slot : "button"
+
+  const handleClick = (e: React.MouseEvent<HTMLButtonElement>) => {
+    if (sound !== "none") playSfx(sound)
+    onClick?.(e)
+  }
 
   return (
     <Comp
       data-slot="button"
       className={cn(buttonVariants({ variant, size, className }))}
+      onClick={handleClick}
       {...props}
     />
   )

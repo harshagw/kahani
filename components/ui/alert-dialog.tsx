@@ -5,6 +5,7 @@ import * as AlertDialogPrimitive from "@radix-ui/react-alert-dialog"
 import * as React from "react"
 
 import { buttonVariants } from "@/components/ui/button"
+import { playSfx } from "@/lib/sfx"
 
 import { cn } from "@/lib/utils"
 
@@ -122,11 +123,16 @@ function AlertDialogDescription({
 
 function AlertDialogAction({
   className,
+  onClick,
   ...props
 }: React.ComponentProps<typeof AlertDialogPrimitive.Action>) {
   return (
     <AlertDialogPrimitive.Action
       className={cn(buttonVariants(), className)}
+      onClick={(e) => {
+        playSfx("click")
+        onClick?.(e)
+      }}
       {...props}
     />
   )
@@ -134,11 +140,16 @@ function AlertDialogAction({
 
 function AlertDialogCancel({
   className,
+  onClick,
   ...props
 }: React.ComponentProps<typeof AlertDialogPrimitive.Cancel>) {
   return (
     <AlertDialogPrimitive.Cancel
       className={cn(buttonVariants({ variant: "neutral" }), className)}
+      onClick={(e) => {
+        playSfx("tap")
+        onClick?.(e)
+      }}
       {...props}
     />
   )

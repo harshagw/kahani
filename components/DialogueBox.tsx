@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { playSfx } from "@/lib/sfx";
 import type { DialogueTurn, NpcDef } from "@/lib/universe";
 
 const MOOD_COLOR: Record<string, string> = {
@@ -77,6 +78,7 @@ export function DialogueBox({
       if (document.activeElement?.tagName === "INPUT") return;
       const n = Number(e.key);
       if (!thinking && n >= 1 && n <= options.length) {
+        playSfx("tap"); // keyboard picks mirror the chip click sound
         onSay(options[n - 1]);
       }
     };
@@ -125,16 +127,19 @@ export function DialogueBox({
               type="button"
               variant={voiceOn ? "noShadow" : "neutral"}
               size="icon"
+              sound={voiceOn ? "toggleOff" : "toggleOn"}
               className={`ml-auto size-8 ${voiceOn ? "bg-main/10 text-main" : ""}`}
               onClick={onToggleVoice}
               title={voiceOn ? "Voice on" : "Voice off"}
             >
               {voiceOn ? <Volume2 size={15} /> : <VolumeX size={15} />}
             </Button>
+            {/* Silent: closing already plays the "close" sweep via World. */}
             <Button
               type="button"
               variant="neutral"
               size="sm"
+              sound="none"
               onClick={onClose}
             >
               Esc · leave
@@ -199,6 +204,7 @@ export function DialogueBox({
                     type="button"
                     variant="neutral"
                     size="sm"
+                    sound="tap"
                     className="h-auto whitespace-normal py-2 text-left"
                     onClick={() => onSay(opt)}
                   >
@@ -231,6 +237,7 @@ export function DialogueBox({
             <Button
               type="submit"
               size="icon"
+              sound="tap"
               disabled={thinking || !draft.trim()}
             >
               <Send size={15} />
