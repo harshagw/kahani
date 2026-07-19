@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card, CardContent, CardFooter } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { PREMISES } from "@/lib/premises";
@@ -80,8 +80,8 @@ export function Landing({ onStart }: { onStart: (idea: string) => void }) {
         >
           Your opening scene
         </Label>
-        <Card className="gap-0 py-2">
-          <CardContent className="px-2">
+        <Card>
+          <CardContent>
             <Textarea
               id="scene-idea"
               value={idea}
@@ -91,18 +91,18 @@ export function Landing({ onStart }: { onStart: (idea: string) => void }) {
               }}
               rows={4}
               placeholder="e.g. A rain-flooded night market in Mumbai. I'm a courier carrying a sealed tiffin box someone will kill for…"
-              className="resize-none border-0 shadow-none"
+              className="resize-none"
             />
-            <div className="flex items-center justify-between px-2 pb-1">
-              <span className="text-[11px] font-medium text-inksoft/70">
-                Any place, any era, any story — ⌘↵ to start
-              </span>
-              <Button onClick={submit} disabled={!idea.trim()}>
-                Build my world
-                <ArrowRight size={15} />
-              </Button>
-            </div>
           </CardContent>
+          <CardFooter className="flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <span className="text-[11px] font-medium text-inksoft/70">
+              Any place, any era, any story — ⌘↵ to start
+            </span>
+            <Button onClick={submit} disabled={!idea.trim()}>
+              Build my world
+              <ArrowRight size={15} />
+            </Button>
+          </CardFooter>
         </Card>
 
         <p className="mb-1 mt-8 text-xs font-bold uppercase tracking-widest text-inksoft">

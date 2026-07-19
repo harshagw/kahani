@@ -120,12 +120,6 @@
   font-family: var(--font-display), var(--font-sans), sans-serif;
 }
 
-:focus-visible {
-  outline: 2px solid var(--main);
-  outline-offset: 2px;
-  transition: none;
-}
-
 /* ---- Animations ---- */
 @keyframes kenburns {
   0% {
