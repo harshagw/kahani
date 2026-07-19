@@ -25,6 +25,7 @@ import { Card, CardContent, CardFooter } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
 import { BrandLogo } from "@/components/BrandLogo";
 import { LoadingBlock } from "@/components/LoadingBlock";
+import { Skeleton } from "@/components/ui/skeleton";
 import { MAX_CREATE_IDEA_LENGTH } from "@/lib/constants";
 import { createClient } from "@/lib/supabase/client";
 import type {
@@ -301,11 +302,11 @@ export function Home() {
           Community worlds
         </p>
         {loading ? (
-          <Card className="gap-0 py-5">
-            <CardContent className="px-4">
-              <LoadingBlock label="Loading gallery…" />
-            </CardContent>
-          </Card>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:gap-4">
+            {Array.from({ length: 6 }).map((_, i) => (
+              <Skeleton key={i} className="aspect-4/3 w-full" />
+            ))}
+          </div>
         ) : gallery.length === 0 ? (
           <p className="text-sm font-medium text-inksoft">
             No community worlds yet — be the first to build one.
