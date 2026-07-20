@@ -7,6 +7,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { assertCanCreate, toGameListItem } from "@/lib/games";
 import { createClient } from "@/lib/supabase/server";
 import { requireUser } from "@/lib/supabase/auth";
+import { getPostHogClient } from "@/lib/posthog-server";
 import type { CreateGameBody, GameRecord } from "@/lib/types/server";
 
 export const runtime = "nodejs";
@@ -84,6 +85,15 @@ export async function POST(req: NextRequest) {
   }
 
   const item = toGameListItem(data as GameRecord);
+
+  const posthog = getPostHogClient();
+  posthog.capture({
+    distinctId: user.id,
+    event: "world_created",
+    properties: { game_id: item.id, title: item.title },
+  });
+  await posthog.flush();
+
   return NextResponse.json(item, {
     status: 201,
     headers: { Location: `/api/games/${item.id}` },

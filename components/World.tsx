@@ -10,6 +10,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import posthog from "posthog-js";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   Compass,
@@ -877,6 +878,7 @@ export function World({ mode, gameId: routeGameId, initialIdea }: WorldProps) {
 
       if (h.kind === "item" && h.itemName) {
         playSfx("pickup");
+        posthog.capture("item_collected", { item_name: h.itemName, scene_id: scene.id });
         setInventory((inv) => (inv.includes(h.itemName!) ? inv : [...inv, h.itemName!]));
         const updated = {
           ...scene,
@@ -895,6 +897,7 @@ export function World({ mode, gameId: routeGameId, initialIdea }: WorldProps) {
         playSfx(h.grantsItem ? "pickup" : "click");
         if (h.grantsItem) {
           const item = h.grantsItem;
+          posthog.capture("item_collected", { item_name: item, scene_id: scene.id });
           setInventory((inv) => (inv.includes(item) ? inv : [...inv, item]));
         }
         const drawn = h.suspicion ?? 0;
@@ -926,6 +929,7 @@ export function World({ mode, gameId: routeGameId, initialIdea }: WorldProps) {
 
       if (h.kind === "npc" && scene.npc) {
         const opening = scene.npc.opening;
+        posthog.capture("npc_conversation_started", { npc_name: scene.npc.name, scene_id: scene.id });
         setDialogue({
           npc: scene.npc,
           history: [{ speaker: "npc", text: opening }],
@@ -999,6 +1003,7 @@ export function World({ mode, gameId: routeGameId, initialIdea }: WorldProps) {
     if (secondsLeft <= 0 || finale || finaleLoading) return;
     setPendingExplore(null);
     setWandering(pending.word);
+    posthog.capture("new_area_explored", { direction: pending.word, x: pending.nx, y: pending.ny });
     try {
       const next = await ensureScreen(bible, pending.nx, pending.ny, pending.dir, scene);
       setSpawn(pending.arriveAt);
@@ -1059,6 +1064,7 @@ export function World({ mode, gameId: routeGameId, initialIdea }: WorldProps) {
         }
         if (reply.questUpdate?.trim()) setQuestHook(reply.questUpdate.trim());
         if (reply.clueRevealed && hasClue && !cluesFound[clueIndex]) {
+          posthog.capture("clue_revealed", { clue_index: clueIndex, scene_id: scene.id });
           setCluesFound((prev) => {
             const next = [...prev];
             next[clueIndex] = true;
@@ -1099,6 +1105,14 @@ export function World({ mode, gameId: routeGameId, initialIdea }: WorldProps) {
       stopVoice();
       setDialogue(null);
       setFinaleLoading(true);
+      posthog.capture("game_ended", {
+        outcome,
+        reason: reason ?? null,
+        clues_found: cluesFound.filter(Boolean).length,
+        total_clues: cluesFound.length,
+        gen_calls: genCalls,
+        screens_dreamed: screensDreamed,
+      });
       try {
         let f: FinaleData | null = savedFinalesRef.current[outcome] ?? null;
         if (!f && outcome === "victory" && finalePromise.current) {
@@ -1133,7 +1147,7 @@ export function World({ mode, gameId: routeGameId, initialIdea }: WorldProps) {
         setFinaleLoading(false);
       }
     },
-    [bible, finale, finaleLoading, speak, stopVoice, addCalls, saveFinale]
+    [bible, finale, finaleLoading, speak, stopVoice, addCalls, saveFinale, cluesFound, genCalls, screensDreamed]
   );
 
   useEffect(() => {

@@ -6,6 +6,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import posthog from "posthog-js";
 import { motion } from "framer-motion";
 import { ArrowRight, Trash2 } from "lucide-react";
 import { World } from "@/components/World";
@@ -60,6 +61,9 @@ export function Home() {
         data: { user },
       } = await supabase.auth.getUser();
       setUserId(user?.id ?? null);
+      if (user) {
+        posthog.identify(user.id);
+      }
 
       const gameList = await request<GameListItem[]>("/api/games");
       setGames(gameList);
@@ -80,11 +84,14 @@ export function Home() {
   const startCreate = () => {
     const text = idea.trim();
     if (!text) return;
+    posthog.capture("world_create_started", { idea_length: text.length });
     setCreatingIdea(text);
   };
 
   const signOut = async () => {
     setSigningOut(true);
+    posthog.capture("user_signed_out");
+    posthog.reset();
     const supabase = createClient();
     await supabase.auth.signOut();
     router.push("/login");
@@ -99,6 +106,7 @@ export function Home() {
         const data = await res.json().catch(() => ({}));
         throw new Error(data.error || "Delete failed.");
       }
+      posthog.capture("own_world_delete_confirmed", { game_id: deleteTarget });
       setDeleteTarget(null);
       await refresh();
     } catch (e) {
@@ -234,7 +242,10 @@ export function Home() {
                       <Button
                         type="button"
                         size="sm"
-                        onClick={() => router.push(`/play/${game.id}`)}
+                        onClick={() => {
+                          posthog.capture("own_world_continued", { game_id: game.id });
+                          router.push(`/play/${game.id}`);
+                        }}
                       >
                         Continue
                       </Button>
@@ -276,7 +287,10 @@ export function Home() {
                       delay: 0.12 + i * 0.04,
                       ease: EASE_OUT,
                     }}
-                    onClick={() => router.push(`/play/${game.id}`)}
+                    onClick={() => {
+                      posthog.capture("community_world_opened", { game_id: game.id });
+                      router.push(`/play/${game.id}`);
+                    }}
                     className="group relative aspect-4/3 overflow-hidden rounded-base border-2 border-border text-left shadow-shadow transition hover:translate-x-boxShadowX hover:translate-y-boxShadowY hover:shadow-none"
                   >
                     {game.thumbnailUrl ? (

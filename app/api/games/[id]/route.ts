@@ -12,6 +12,7 @@ import {
 } from "@/lib/games";
 import { createClient } from "@/lib/supabase/server";
 import { requireUser } from "@/lib/supabase/auth";
+import { getPostHogClient } from "@/lib/posthog-server";
 import type { GameIdRouteContext } from "@/lib/types/server";
 
 export const runtime = "nodejs";
@@ -53,6 +54,15 @@ export async function DELETE(_req: NextRequest, context: GameIdRouteContext) {
     await deleteGameAssets(supabase, game.owner, game.id);
     const { error } = await supabase.from("games").delete().eq("id", id);
     if (error) throw error;
+
+    const posthog = getPostHogClient();
+    posthog.capture({
+      distinctId: user.id,
+      event: "world_deleted",
+      properties: { game_id: id },
+    });
+    await posthog.flush();
+
     return new NextResponse(null, { status: 204 });
   } catch (err) {
     const status = (err as Error & { status?: number }).status;

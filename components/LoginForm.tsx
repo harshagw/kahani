@@ -2,6 +2,7 @@
 
 import { useState, type FormEvent } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import posthog from "posthog-js";
 import { motion } from "framer-motion";
 import { ArrowRight, Mail } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -43,6 +44,7 @@ export function LoginForm() {
   const signInWithGoogle = async () => {
     setError(null);
     setLoading("google");
+    posthog.capture("sign_in_with_google_clicked");
     const supabase = createClient();
     const { error: oauthError } = await supabase.auth.signInWithOAuth({
       provider: "google",
@@ -60,6 +62,7 @@ export function LoginForm() {
     if (!trimmed) return;
     setError(null);
     setLoading("email");
+    posthog.capture("magic_link_requested");
     const supabase = createClient();
     const { error: otpError } = await supabase.auth.signInWithOtp({
       email: trimmed,
@@ -81,7 +84,7 @@ export function LoginForm() {
     setError(null);
     setLoading("password");
     const supabase = createClient();
-    const { error: passwordError } = await supabase.auth.signInWithPassword({
+    const { data, error: passwordError } = await supabase.auth.signInWithPassword({
       email: trimmedEmail,
       password: devPassword,
     });
@@ -89,6 +92,9 @@ export function LoginForm() {
       setError(passwordError.message);
       setLoading(null);
       return;
+    }
+    if (data.user) {
+      posthog.identify(data.user.id);
     }
     router.push(safeNext);
     router.refresh();
