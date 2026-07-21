@@ -49,8 +49,14 @@ export function DialogueBox({
   const lastNpcLine = [...history].reverse().find((t) => t.speaker === "npc");
 
   const [typed, setTyped] = useState(0);
+  const prevSpeaking = useRef(false);
+
+  // Reset typewriter only when a new NPC line arrives.
   useEffect(() => {
     setTyped(0);
+  }, [lastNpcLine?.text]);
+
+  useEffect(() => {
     if (!lastNpcLine) return;
     // With voice on, wait for playback to start so text and audio feel synced.
     if (voiceOn && !speaking) return;
@@ -68,7 +74,15 @@ export function DialogueBox({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lastNpcLine?.text, voiceOn, speaking]);
 
-  // If TTS fails, reveal the full line after a short wait instead of leaving it blank.
+  // Keep the full line visible after voice finishes (avoid blank flash).
+  useEffect(() => {
+    if (prevSpeaking.current && !speaking && lastNpcLine) {
+      setTyped(lastNpcLine.text.length);
+    }
+    prevSpeaking.current = speaking;
+  }, [speaking, lastNpcLine]);
+
+  // If TTS never starts, reveal the full line after a short wait.
   useEffect(() => {
     if (!voiceOn || !lastNpcLine || speaking || thinking) return;
     const t = setTimeout(() => {
