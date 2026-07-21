@@ -1,25 +1,10 @@
 import { Card, CardContent, CardFooter } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 
-/** Placeholder layout while the home gallery loads — create, your worlds, and community grid. */
+/** Placeholder layout while the home gallery loads — your worlds, community grid, and create. */
 export function HomePageSkeleton() {
   return (
     <>
-      <section className="mb-14">
-        <p className="mb-2 text-xs font-bold uppercase tracking-widest text-inksoft">
-          Create
-        </p>
-        <Card className="gap-0 py-5">
-          <CardContent className="px-4">
-            <Skeleton className="h-[4.5rem] w-full" />
-          </CardContent>
-          <CardFooter className="flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-            <Skeleton className="h-3 w-24" />
-            <Skeleton className="h-9 w-36" />
-          </CardFooter>
-        </Card>
-      </section>
-
       <section className="mb-14">
         <p className="mb-1 text-xs font-bold uppercase tracking-widest text-inksoft">
           Your worlds
@@ -42,7 +27,7 @@ export function HomePageSkeleton() {
         </ul>
       </section>
 
-      <section>
+      <section className="mb-14">
         <p className="mb-4 text-xs font-bold uppercase tracking-widest text-inksoft">
           Community worlds
         </p>
@@ -51,6 +36,21 @@ export function HomePageSkeleton() {
             <Skeleton key={i} className="aspect-4/3 w-full" />
           ))}
         </div>
+      </section>
+
+      <section>
+        <p className="mb-2 text-xs font-bold uppercase tracking-widest text-inksoft">
+          Create
+        </p>
+        <Card className="gap-0 py-5">
+          <CardContent className="px-4">
+            <Skeleton className="h-[4.5rem] w-full" />
+          </CardContent>
+          <CardFooter className="flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <Skeleton className="h-3 w-24" />
+            <Skeleton className="h-9 w-36" />
+          </CardFooter>
+        </Card>
       </section>
     </>
   );

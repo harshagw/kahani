@@ -1,5 +1,10 @@
 import { Type } from "@google/genai";
 import { generateContentWithRetry, generateImage, toDataUrl, type ImageResult } from "./gemini";
+import {
+  resolveSpeaker,
+  synthesizeSarvamSpeech,
+  VOICE_NAMES,
+} from "./sarvam";
 import type { Premise } from "./types";
 import type {
   DialogueResponse,
@@ -19,7 +24,6 @@ const PIXEL_STYLE =
 
 const TEXT_MODEL = process.env.TEXT_MODEL || "gemini-2.5-flash";
 const IMAGE_MODEL = process.env.IMAGE_MODEL || "gemini-2.5-flash-image";
-const VOICE_MODEL = process.env.VOICE_MODEL || "gemini-2.5-flash-preview-tts";
 
 const rectSchema = {
   type: Type.OBJECT,
@@ -40,17 +44,6 @@ function clampRect(r: Rect): Rect {
 /* ------------------------------------------------------------------ */
 /* The Game Bible — one planner call authors the whole game upfront    */
 /* ------------------------------------------------------------------ */
-
-const VOICE_NAMES = [
-  "Puck",
-  "Charon",
-  "Kore",
-  "Fenrir",
-  "Aoede",
-  "Leda",
-  "Orus",
-  "Zephyr",
-];
 
 const plannedItemSchema = {
   type: Type.OBJECT,
@@ -128,9 +121,9 @@ const npcPlanSchema = {
     },
     voice: {
       type: Type.STRING,
-      enum: VOICE_NAMES,
+      enum: [...VOICE_NAMES],
       description:
-        "TTS voice fitting the character: Charon/Orus = deep older male; Fenrir = gravelly, intense; Puck/Zephyr = quick, energetic; Kore = warm neutral female; Aoede/Leda = bright younger female.",
+        "Sarvam Bulbul speaker id: aditya/rahul/anand = deep older male; varun/mohit = gravelly, intense; rohan/amit = quick, energetic; priya/neha = warm female; kavya/ishita = bright younger female.",
     },
   },
   required: [
@@ -365,7 +358,7 @@ export async function generateBible(idea: string): Promise<GameBible> {
   bible.street.actions = (bible.street.actions ?? []).slice(0, 2);
   bible.street.actions.forEach((a) => (a.suspicion = clampSuspicion(a.suspicion)));
   for (const npc of bible.npcs) {
-    if (!VOICE_NAMES.includes(npc.voice)) npc.voice = "Kore";
+    npc.voice = resolveSpeaker(npc.voice);
   }
   return bible;
 }
@@ -1090,58 +1083,17 @@ export async function generateFinale(
 }
 
 /* ------------------------------------------------------------------ */
-/* Voice (TTS)                                                         */
+/* Voice (TTS) — Sarvam Bulbul v3                                      */
 /* ------------------------------------------------------------------ */
 
-/** Wrap raw 16-bit mono PCM (24 kHz, Gemini TTS output) in a WAV container. */
-function pcmToWav(pcm: Buffer, sampleRate = 24000): Buffer {
-  const header = Buffer.alloc(44);
-  const dataSize = pcm.length;
-  header.write("RIFF", 0);
-  header.writeUInt32LE(36 + dataSize, 4);
-  header.write("WAVE", 8);
-  header.write("fmt ", 12);
-  header.writeUInt32LE(16, 16); // fmt chunk size
-  header.writeUInt16LE(1, 20); // PCM
-  header.writeUInt16LE(1, 22); // mono
-  header.writeUInt32LE(sampleRate, 24);
-  header.writeUInt32LE(sampleRate * 2, 28); // byte rate
-  header.writeUInt16LE(2, 32); // block align
-  header.writeUInt16LE(16, 34); // bits per sample
-  header.write("data", 36);
-  header.writeUInt32LE(dataSize, 40);
-  return Buffer.concat([header, pcm]);
-}
-
 /**
- * Synthesize a spoken line as a PERFORMANCE: an optional style direction
- * (mood + character) shapes the delivery. Returns a data-URL WAV, or null.
+ * Synthesize a spoken NPC line. Pace and temperature shape delivery.
+ * Returns a data-URL WAV, or null when TTS is unavailable.
  */
 export async function synthesizeVoice(
   text: string,
-  voiceName = "Kore",
-  style?: string
+  voiceName?: string,
+  opts?: { pace?: number; temperature?: number }
 ): Promise<string | null> {
-  const directed = style ? `${style}: "${text}"` : text;
-  try {
-    const res = await generateContentWithRetry({
-      model: VOICE_MODEL,
-      contents: [{ parts: [{ text: directed }] }],
-      config: {
-        responseModalities: ["AUDIO"],
-        speechConfig: {
-          voiceConfig: { prebuiltVoiceConfig: { voiceName } },
-        },
-      },
-    });
-    const data = res.candidates?.[0]?.content?.parts?.find(
-      (p) => p.inlineData?.data
-    )?.inlineData?.data;
-    if (!data) return null;
-    const wav = pcmToWav(Buffer.from(data, "base64"));
-    return `data:audio/wav;base64,${wav.toString("base64")}`;
-  } catch (err) {
-    console.error("[synthesizeVoice] voice unavailable:", err);
-    return null;
-  }
+  return synthesizeSarvamSpeech(text, voiceName, opts);
 }

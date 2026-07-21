@@ -28,7 +28,7 @@ import { BrandLogo } from "@/components/BrandLogo";
 import { HomePageSkeleton } from "@/components/HomePageSkeleton";
 import { MAX_CREATE_IDEA_LENGTH } from "@/lib/constants";
 import { createClient } from "@/lib/supabase/client";
-import type { GameListItem } from "@/lib/types/client";
+import type { GameListItem, ProfileResponse } from "@/lib/types/client";
 
 const EASE_OUT = [0.16, 1, 0.3, 1] as const;
 
@@ -45,6 +45,7 @@ export function Home() {
   const router = useRouter();
   const [idea, setIdea] = useState("");
   const [games, setGames] = useState<GameListItem[]>([]);
+  const [canCreate, setCanCreate] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [signingOut, setSigningOut] = useState(false);
@@ -65,8 +66,12 @@ export function Home() {
         posthog.identify(user.id);
       }
 
-      const gameList = await request<GameListItem[]>("/api/games");
+      const [gameList, profile] = await Promise.all([
+        request<GameListItem[]>("/api/games"),
+        request<ProfileResponse>("/api/profile"),
+      ]);
       setGames(gameList);
+      setCanCreate(profile.generation.canCreate);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load gallery.");
     } finally {
@@ -82,6 +87,7 @@ export function Home() {
   const gallery = userId ? games.filter((g) => g.owner !== userId) : games;
 
   const startCreate = () => {
+    if (!canCreate) return;
     const text = idea.trim();
     if (!text) return;
     posthog.capture("world_create_started", { idea_length: text.length });
@@ -150,7 +156,7 @@ export function Home() {
           </div>
         </div>
                     <p className="mt-4 max-w-lg text-lg font-semibold text-foreground">
-              Walk worlds others have built — or describe your own.
+              Play worlds others have built!
             </p>
       </motion.header>
 
@@ -164,42 +170,6 @@ export function Home() {
         <HomePageSkeleton />
       ) : (
         <>
-          <motion.section
-            initial={{ opacity: 0, y: 12 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.45, delay: 0.06, ease: EASE_OUT }}
-            className="mb-14"
-          >
-            <p className="mb-2 text-xs font-bold uppercase tracking-widest text-inksoft">
-              Create
-            </p>
-            <Card>
-              <CardContent>
-                <Textarea
-                  value={idea}
-                  onChange={(e) => setIdea(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" && (e.metaKey || e.ctrlKey))
-                      startCreate();
-                  }}
-                  maxLength={MAX_CREATE_IDEA_LENGTH}
-                  rows={3}
-                  placeholder="e.g. A rain-flooded night market in Mumbai. I'm a courier carrying a sealed tiffin box someone will kill for…"
-                  className="resize-none"
-                />
-              </CardContent>
-              <CardFooter className="flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                <span className="text-[11px] font-medium text-inksoft/70">
-                  ⌘↵ to build
-                </span>
-                <Button onClick={startCreate} disabled={!idea.trim()}>
-                  Build a new world
-                  <ArrowRight size={15} />
-                </Button>
-              </CardFooter>
-            </Card>
-          </motion.section>
-
           {mine.length > 0 && (
             <section className="mb-14">
               <p className="mb-1 text-xs font-bold uppercase tracking-widest text-inksoft">
@@ -266,13 +236,15 @@ export function Home() {
             </section>
           )}
 
-          <section>
+          <section className="mb-14">
             <p className="mb-4 text-xs font-bold uppercase tracking-widest text-inksoft">
               Community worlds
             </p>
             {gallery.length === 0 ? (
               <p className="text-sm font-medium text-inksoft">
-                No community worlds yet — be the first to build one.
+                {canCreate
+                  ? "No community worlds yet — be the first to build one."
+                  : "No community worlds yet."}
               </p>
             ) : (
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:gap-4">
@@ -311,6 +283,46 @@ export function Home() {
               </div>
             )}
           </section>
+
+          <motion.section
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.45, delay: 0.06, ease: EASE_OUT }}
+          >
+            <p className="mb-2 text-xs font-bold uppercase tracking-widest text-inksoft">
+              Create
+            </p>
+            <Card className={canCreate ? undefined : "opacity-60"}>
+              <CardContent>
+                <Textarea
+                  value={idea}
+                  onChange={(e) => setIdea(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && (e.metaKey || e.ctrlKey))
+                      startCreate();
+                  }}
+                  maxLength={MAX_CREATE_IDEA_LENGTH}
+                  rows={3}
+                  disabled={!canCreate}
+                  placeholder={
+                    canCreate
+                      ? "e.g. A rain-flooded night market in Mumbai. I'm a courier carrying a sealed tiffin box someone will kill for…"
+                      : "Creating new worlds is currently unavailable. We are working on ramping up capacity and will be available soon!"
+                  }
+                  className="resize-none"
+                />
+              </CardContent>
+              <CardFooter className="flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <span className="text-[11px] font-medium text-inksoft/70">
+                  {canCreate ? "⌘↵ to build" : "Gallery-only for now"}
+                </span>
+                <Button onClick={startCreate} disabled={!canCreate || !idea.trim()}>
+                  Build a new world
+                  <ArrowRight size={15} />
+                </Button>
+              </CardFooter>
+            </Card>
+          </motion.section>
         </>
       )}
 

@@ -39,7 +39,7 @@ fast, cheap, high-volume generation:
 
 **Dialogue:** each NPC guards one clue of the world's single mystery.
 Conversations are bounded — the clue must surface by the second exchange and
-the chat closes by the third. NPC lines are voiced with **Gemini TTS**.
+the chat closes by the third. NPC lines are voiced with **Sarvam Bulbul v3**.
 Collect all 3 clues → **"Unravel the truth"** → a generated finale frame +
 the secret, spoken aloud.
 
@@ -49,13 +49,13 @@ the secret, spoken aloud.
 | --- | --- |
 | `gemini-3.1-flash-lite-image` (NB2 Lite) | streets, interiors, sprite, finale — all live |
 | `gemini-3.5-flash` | universe + story arc, level design, walkability vision, NPC dialogue |
-| `gemini-3.1-flash-tts-preview` (Gemini Audio) | every NPC line + the finale, spoken |
+| Sarvam Bulbul v3 | every NPC line + the finale, spoken |
 
 ## Run it
 
 ```bash
 npm install
-cp .env.example .env.local   # add GEMINI_API_KEY, Supabase keys, model ids
+cp .env.example .env.local   # add GEMINI_API_KEY, SARVAM_API_KEY, Supabase keys, model ids
 npm run dev                  # http://localhost:3000
 ```
 

@@ -94,11 +94,28 @@ const OPENING_OPTIONS = [
   "I need your help.",
 ];
 
-/** TTS performance hint derived from NPC role and mood. */
-function voiceStyle(npc: { role?: string } | null, mood?: string): string {
-  const m = mood ? `in a ${mood} tone` : "with dramatic feeling";
-  return `As a ${npc?.role ?? "character"} in an Indian adventure story, say this ${m}`;
+/** Sarvam Bulbul delivery params derived from dialogue mood. */
+function voiceParams(mood?: string): { pace: number; temperature: number } {
+  switch (mood) {
+    case "urgent":
+    case "angry":
+      return { pace: 1.3, temperature: 0.9 };
+    case "fearful":
+    case "secretive":
+      return { pace: 0.85, temperature: 0.4 };
+    case "warm":
+    case "amused":
+      return { pace: 1.0, temperature: 0.6 };
+    case "wary":
+      return { pace: 0.95, temperature: 0.5 };
+    default:
+      return { pace: 1.0, temperature: 0.6 };
+  }
 }
+
+/** Narrator delivery for finale resolution lines. */
+const NARRATOR_VOICE = "shubh";
+const NARRATOR_PARAMS = { pace: 0.8, temperature: 0.5 };
 
 /** True when the value is an inline `data:` URL from live generation. */
 function isDataUrl(value: string): boolean {
@@ -408,11 +425,21 @@ export function World({ mode, gameId: routeGameId, initialIdea }: WorldProps) {
   }, []);
 
   const fetchVoice = useCallback(
-    (text: string, voice?: string, style?: string): Promise<string | null> => {
-      const key = `${voice ?? ""}|${style ?? ""}|${text}`;
+    (
+      text: string,
+      voice?: string,
+      pace?: number,
+      temperature?: number
+    ): Promise<string | null> => {
+      const key = `${voice ?? ""}|${pace ?? ""}|${temperature ?? ""}|${text}`;
       const hit = voiceCache.current.get(key);
       if (hit) return hit;
-      const p = post<{ audio: string | null }>("/api/voice", { text, voice, style })
+      const p = post<{ audio: string | null }>("/api/voice", {
+        text,
+        voice,
+        pace,
+        temperature,
+      })
         .then(({ audio }) => {
           if (!audio) voiceCache.current.delete(key);
           return audio;
@@ -428,9 +455,14 @@ export function World({ mode, gameId: routeGameId, initialIdea }: WorldProps) {
   );
 
   const speak = useCallback(
-    async (text: string, voice?: string, style?: string) => {
+    async (
+      text: string,
+      voice?: string,
+      pace?: number,
+      temperature?: number
+    ) => {
       if (!voiceOnRef.current || !text.trim()) return;
-      const audio = await fetchVoice(text, voice, style);
+      const audio = await fetchVoice(text, voice, pace, temperature);
       if (!audio || !voiceOnRef.current) return;
       audioRef.current?.pause();
       const el = new Audio(audio);
@@ -482,7 +514,8 @@ export function World({ mode, gameId: routeGameId, initialIdea }: WorldProps) {
       if (!canGenerateRef.current) return;
       const npc = s.npc;
       if (!npc || typeof s.clueIndex !== "number") return;
-      fetchVoice(npc.opening, npc.voice, voiceStyle(npc, "wary"));
+      const wary = voiceParams("wary");
+      fetchVoice(npc.opening, npc.voice, wary.pace, wary.temperature);
       for (const option of OPENING_OPTIONS) {
         const key = `${s.id}|${option}`;
         if (dialogueCache.current.has(key)) continue;
@@ -495,7 +528,8 @@ export function World({ mode, gameId: routeGameId, initialIdea }: WorldProps) {
           exchanges: 1,
           heat: 0,
         }).then((reply) => {
-          fetchVoice(reply.line, npc.voice, voiceStyle(npc, reply.mood));
+          const params = voiceParams(reply.mood);
+          fetchVoice(reply.line, npc.voice, params.pace, params.temperature);
           return reply;
         });
         p.catch(() => dialogueCache.current.delete(key));
@@ -702,7 +736,12 @@ export function World({ mode, gameId: routeGameId, initialIdea }: WorldProps) {
           .then(({ finale: f }) => {
             addCalls(GEN_CALL_COST.finale);
             saveFinale("victory", f);
-            fetchVoice(f.resolution, "Charon", "As a storyteller closing a mystery, say this with slow gravity");
+            fetchVoice(
+              f.resolution,
+              NARRATOR_VOICE,
+              NARRATOR_PARAMS.pace,
+              NARRATOR_PARAMS.temperature
+            );
             return f;
           })
           .catch(() => null);
@@ -913,14 +952,24 @@ export function World({ mode, gameId: routeGameId, initialIdea }: WorldProps) {
 
       if (h.kind === "npc" && scene.npc) {
         const opening = scene.npc.opening;
+        const params = voiceParams("wary");
         posthog.capture("npc_conversation_started", { npc_name: scene.npc.name, scene_id: scene.id });
+        if (voiceOnRef.current) {
+          setDialogue({
+            npc: scene.npc,
+            history: [],
+            options: [],
+            thinking: true,
+          });
+          await fetchVoice(opening, scene.npc.voice, params.pace, params.temperature);
+        }
         setDialogue({
           npc: scene.npc,
           history: [{ speaker: "npc", text: opening }],
           options: OPENING_OPTIONS,
           thinking: false,
         });
-        speak(opening, scene.npc.voice, voiceStyle(scene.npc, "wary"));
+        void speak(opening, scene.npc.voice, params.pace, params.temperature);
         return;
       }
 
@@ -955,7 +1004,7 @@ export function World({ mode, gameId: routeGameId, initialIdea }: WorldProps) {
         }
       }
     },
-    [bible, ensureSceneReady, prefetchInterior, premise, scene, showScene, speak, stopVoice, secondsLeft, finale, finaleLoading]
+    [bible, ensureSceneReady, fetchVoice, prefetchInterior, premise, scene, showScene, speak, stopVoice, secondsLeft, finale, finaleLoading]
   );
 
   /** Walking off an open edge — confirm before generating; walls for visitors without a neighbor. */
@@ -1061,6 +1110,15 @@ export function World({ mode, gameId: routeGameId, initialIdea }: WorldProps) {
             return next;
           });
         }
+        const params = voiceParams(reply.mood);
+        if (voiceOnRef.current) {
+          await fetchVoice(
+            reply.line,
+            dialogue.npc.voice,
+            params.pace,
+            params.temperature
+          );
+        }
         setDialogue({
           npc: dialogue.npc,
           history: [...history, { speaker: "npc", text: reply.line }],
@@ -1068,7 +1126,12 @@ export function World({ mode, gameId: routeGameId, initialIdea }: WorldProps) {
           thinking: false,
           mood: reply.mood,
         });
-        speak(reply.line, dialogue.npc.voice, voiceStyle(dialogue.npc, reply.mood));
+        void speak(
+          reply.line,
+          dialogue.npc.voice,
+          params.pace,
+          params.temperature
+        );
       } catch {
         setDialogue({
           ...dialogue,
@@ -1078,7 +1141,7 @@ export function World({ mode, gameId: routeGameId, initialIdea }: WorldProps) {
         });
       }
     },
-    [bible, scene, dialogue, heat, cluesFound, speak, addCalls, inventory, secondsLeft, finale, finaleLoading]
+    [bible, scene, dialogue, heat, cluesFound, speak, fetchVoice, addCalls, inventory, secondsLeft, finale, finaleLoading]
   );
 
   const allCluesFound = bible ? cluesFound.every(Boolean) : false;
@@ -1116,13 +1179,20 @@ export function World({ mode, gameId: routeGameId, initialIdea }: WorldProps) {
           saveFinale(outcome, f);
         }
         if (!f) throw new Error("Finale unavailable.");
+        if (voiceOnRef.current) {
+          await fetchVoice(
+            f.resolution,
+            NARRATOR_VOICE,
+            NARRATOR_PARAMS.pace,
+            NARRATOR_PARAMS.temperature
+          );
+        }
         setFinale({ ...f, outcome: f.outcome ?? outcome });
-        speak(
+        void speak(
           f.resolution,
-          "Charon",
-          outcome === "victory"
-            ? "As a storyteller closing a mystery, say this with slow gravity"
-            : "As a storyteller mourning a downfall, say this with slow gravity"
+          NARRATOR_VOICE,
+          NARRATOR_PARAMS.pace,
+          NARRATOR_PARAMS.temperature
         );
       } catch {
         setError("The ending slipped away. Try again.");
@@ -1131,7 +1201,7 @@ export function World({ mode, gameId: routeGameId, initialIdea }: WorldProps) {
         setFinaleLoading(false);
       }
     },
-    [bible, finale, finaleLoading, speak, stopVoice, addCalls, saveFinale, cluesFound, genCalls, screensDreamed]
+    [bible, finale, finaleLoading, speak, fetchVoice, stopVoice, addCalls, saveFinale, cluesFound, genCalls, screensDreamed]
   );
 
   useEffect(() => {

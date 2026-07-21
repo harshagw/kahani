@@ -52,6 +52,9 @@ export function DialogueBox({
   useEffect(() => {
     setTyped(0);
     if (!lastNpcLine) return;
+    // With voice on, wait for playback to start so text and audio feel synced.
+    if (voiceOn && !speaking) return;
+
     const iv = setInterval(() => {
       setTyped((n) => {
         if (n >= lastNpcLine.text.length) {
@@ -63,7 +66,16 @@ export function DialogueBox({
     }, 18);
     return () => clearInterval(iv);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [lastNpcLine?.text]);
+  }, [lastNpcLine?.text, voiceOn, speaking]);
+
+  // If TTS fails, reveal the full line after a short wait instead of leaving it blank.
+  useEffect(() => {
+    if (!voiceOn || !lastNpcLine || speaking || thinking) return;
+    const t = setTimeout(() => {
+      setTyped((n) => (n >= lastNpcLine.text.length ? n : lastNpcLine.text.length));
+    }, 800);
+    return () => clearTimeout(t);
+  }, [voiceOn, lastNpcLine?.text, speaking, thinking]);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: 99999, behavior: "smooth" });

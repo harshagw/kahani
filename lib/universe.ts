@@ -10,7 +10,7 @@ export type NpcDef = {
   opening: string;
   /** Distinctive verbal habit, e.g. "ends sentences with 'hain na?'". */
   quirk?: string;
-  /** Gemini TTS prebuilt voice name chosen to fit this character. */
+  /** Sarvam Bulbul speaker id chosen to fit this character. */
   voice?: string;
 };
 
@@ -89,7 +89,7 @@ export type NpcPlan = {
   opening: string;
   /** Distinctive verbal habit. */
   quirk: string;
-  /** Gemini TTS prebuilt voice name. */
+  /** Sarvam Bulbul speaker id. */
   voice: string;
 };
 

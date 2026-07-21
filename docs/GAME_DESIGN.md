@@ -29,7 +29,7 @@ in real time as the player explores.
 | World & interiors | **NB2 Lite** (`IMAGE_MODEL`) | street + interior frames, generated live; interiors **prefetched in parallel** while you walk |
 | Player asset | **NB2 Lite** | full-body sprite on white, chroma-keyed client-side |
 | World brain | **Gemini flash** (`TEXT_MODEL`) | scene layouts (hotspot boxes), NPC personas, dialogue turns, quest thread |
-| NPC voice | **Gemini TTS / Live** (`VOICE_MODEL`) | every NPC line spoken aloud |
+| NPC voice | **Sarvam Bulbul v3** (`SARVAM_API_KEY`) | every NPC line spoken aloud |
 
 High-volume generation is load-bearing: a 5-minute session generates a street,
 a sprite, 3–4 interiors (prefetched), and a voice clip per dialogue line.
@@ -37,7 +37,8 @@ a sprite, 3–4 interiors (prefetched), and a voice clip per dialogue line.
 ## Architecture
 
 - `lib/universe.ts` — Scene/Hotspot/NPC types
-- `lib/gemini.ts` — `generateSceneSpec`, `generateSprite`, `generateDialogue`, `synthesizeVoice`
+- `lib/gemini.ts` — `generateSceneSpec`, `generateSprite`, `generateDialogue`
+- `lib/sarvam.ts` — Sarvam Bulbul v3 TTS (`synthesizeSarvamSpeech`)
 - `app/api/scene` · `app/api/sprite` · `app/api/dialogue` · `app/api/voice`
 - `components/World.tsx` — orchestrator: scene cache, prefetch, dialogue, voice
 - `components/GameCanvas.tsx` — canvas render loop, keyboard, hotspot detection
