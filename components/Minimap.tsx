@@ -19,7 +19,7 @@ export type MinimapProps = {
 };
 
 const PANEL_DEFAULT = 140;
-const PANEL_COMPACT = 96;
+const PANEL_COMPACT = 72;
 const INSET = 10;
 const GRID_PAD = 1;
 

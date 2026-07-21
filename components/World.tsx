@@ -12,19 +12,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import posthog from "posthog-js";
 import { AnimatePresence, motion } from "framer-motion";
-import {
-  Compass,
-  DoorOpen,
-  Eye,
-  Flame,
-  Hourglass,
-  Music,
-  Package,
-  Search,
-  Volume2,
-  VolumeX,
-  Zap,
-} from "lucide-react";
+import { Compass, DoorOpen, Zap } from "lucide-react";
 import type {
   CreateGameResponse,
   FinaleData,
@@ -61,7 +49,6 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import {
@@ -70,13 +57,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Progress } from "@/components/ui/progress";
 import { BOOT_PROGRESS, LoadingBlock } from "@/components/LoadingBlock";
 import { GameCanvas, type ExitDirection, type PlayerState, type TouchInput } from "./GameCanvas";
 import { DialogueBox } from "./DialogueBox";
 import { MobileControls, RotateToLandscapePrompt, useCoarsePointer } from "./MobileControls";
+import { WorldHud } from "./WorldHud";
 import {
-  Minimap,
   mergeKnownCell,
   streetCellFromScene,
   streetsFromScenes,
@@ -107,13 +93,6 @@ const OPENING_OPTIONS = [
   "Something's wrong here. Talk.",
   "I need your help.",
 ];
-
-/** Format remaining session seconds as `m:ss`. */
-function formatSessionTime(seconds: number): string {
-  const m = Math.floor(seconds / 60);
-  const s = seconds % 60;
-  return `${m}:${String(s).padStart(2, "0")}`;
-}
 
 /** TTS performance hint derived from NPC role and mood. */
 function voiceStyle(npc: { role?: string } | null, mood?: string): string {
@@ -1283,146 +1262,33 @@ export function World({ mode, gameId: routeGameId, initialIdea }: WorldProps) {
         onInteract={onInteract}
       />
 
-      <div className="pointer-events-none absolute inset-x-0 top-0 z-10 flex items-start justify-between gap-2 p-2 sm:gap-3 sm:p-4">
-        <div className="flex max-w-[45vw] flex-col gap-1.5 sm:max-w-sm sm:gap-2">
-          <Card className="gap-0 px-3 py-2 sm:px-4 sm:py-2.5">
-            <p className="line-clamp-1 text-[10px] font-bold uppercase tracking-widest text-inksoft">
-              {premise.title} · {scene.title}
-            </p>
-            {questHook && (
-              <p className="mt-0.5 text-sm font-semibold leading-snug text-foreground">
-                {questHook}
-              </p>
-            )}
-          </Card>
-          <Card className="flex w-fit flex-row items-center gap-2 px-3 py-1.5">
-            <Hourglass
-              size={12}
-              strokeWidth={2.5}
-              className={secondsLeft <= 60 ? "text-health" : "text-main"}
-            />
-            <span className="text-[10px] font-bold uppercase tracking-widest text-inksoft">
-              Time
-            </span>
-            <span
-              className={`text-[11px] font-bold tabular-nums ${
-                secondsLeft <= 60 ? "text-health" : "text-foreground"
-              }`}
-            >
-              {formatSessionTime(secondsLeft)}
-            </span>
-          </Card>
-          {inventory.length > 0 && (
-            <Card className="flex w-fit max-w-xs flex-row flex-wrap items-center gap-1.5 gap-y-1 px-3 py-1.5">
-              <Package size={12} strokeWidth={2.5} className="text-main" />
-              {inventory.map((it) => (
-                <Badge key={it} variant="neutral" className="text-[10px]">
-                  {it}
-                </Badge>
-              ))}
-            </Card>
-          )}
-          {bible && (
-            <Card className="flex w-fit flex-row items-center gap-2 px-3 py-1.5">
-              <Search size={12} strokeWidth={2.5} className="text-main" />
-              <span className="flex gap-1">
-                {cluesFound.map((found, i) => (
-                  <span
-                    key={i}
-                    className={`h-1.5 w-4 rounded-full ${
-                      found ? "bg-main" : "bg-foreground/15"
-                    }`}
-                  />
-                ))}
-              </span>
-              <span className="text-[11px] font-bold tabular-nums text-foreground">
-                {cluesFound.filter(Boolean).length}/{cluesFound.length} clues
-              </span>
-              {allCluesFound && !finale && (
-                <Button
-                  size="sm"
-                  className="pointer-events-auto ml-1 h-7 px-3 text-[11px]"
-                  onClick={() => runFinale("victory")}
-                  disabled={finaleLoading}
-                >
-                  {finaleLoading ? "Unraveling…" : "Unravel the truth"}
-                </Button>
-              )}
-            </Card>
-          )}
-          {bible && heat > 0 && (
-            <Card className="flex w-fit flex-row items-center gap-2 px-3 py-1.5">
-              <Flame
-                size={12}
-                strokeWidth={2.5}
-                className={heat >= 60 ? "text-health" : "text-inksoft"}
-              />
-              <span className="text-[10px] font-bold uppercase tracking-widest text-inksoft">
-                {bible.heatLabel}
-              </span>
-              <Progress
-                value={heat}
-                className="h-1.5 w-16 [&_[data-slot=progress-indicator]]:bg-health"
-              />
-              <span className="text-[11px] font-bold tabular-nums text-foreground">
-                {heat}
-              </span>
-            </Card>
-          )}
-        </div>
-        <div className="pointer-events-none flex flex-col items-end gap-2">
-          <div className="pointer-events-auto flex items-center gap-2">
-          {scene.annotated && (
-            <Button
-              variant={showVision ? "default" : "neutral"}
-              size="icon"
-              hoverSound="hover"
-              onClick={() => setShowVision((v) => !v)}
-              title={
-                showVision
-                  ? "Engine vision: the borders the model traced over its own frame"
-                  : "Show what the engine sees"
-              }
-            >
-              <Eye size={15} />
-            </Button>
-          )}
-          <Button
-            variant={musicOn ? "default" : "neutral"}
-            size="icon"
-            sound={musicOn ? "toggleOff" : "toggleOn"}
-            hoverSound="hover"
-            onClick={() => setMusicOn((m) => !m)}
-            title={musicOn ? "Music on" : "Music off"}
-          >
-            <Music size={15} className={musicOn ? "" : "opacity-40"} />
-          </Button>
-          <Button
-            variant={voiceOn ? "default" : "neutral"}
-            size="icon"
-            sound={voiceOn ? "toggleOff" : "toggleOn"}
-            hoverSound="hover"
-            onClick={() => setVoiceOn((v) => !v)}
-            title={voiceOn ? "Voice on" : "Voice off"}
-          >
-            {voiceOn ? <Volume2 size={15} /> : <VolumeX size={15} />}
-          </Button>
-          <Button variant="neutral" size="sm" sound="close" hoverSound="hover" onClick={leaveWorld}>
-            Leave world
-          </Button>
-          </div>
-          {!dialogue && !finale && (
-            <Minimap
-              known={knownStreets}
-              walked={walkedStreets}
-              currentCoord={minimapCoord}
-              player={playerPos}
-              inside={scene.kind === "interior"}
-              compact={touchControls}
-            />
-          )}
-        </div>
-      </div>
+      <WorldHud
+        compact={touchControls}
+        premise={premise}
+        scene={scene}
+        questHook={questHook}
+        secondsLeft={secondsLeft}
+        inventory={inventory}
+        bible={bible}
+        cluesFound={cluesFound}
+        allCluesFound={allCluesFound}
+        finale={finale}
+        finaleLoading={finaleLoading}
+        heat={heat}
+        showVision={showVision}
+        onToggleVision={() => setShowVision((v) => !v)}
+        musicOn={musicOn}
+        onToggleMusic={() => setMusicOn((m) => !m)}
+        voiceOn={voiceOn}
+        onToggleVoice={() => setVoiceOn((v) => !v)}
+        onLeaveWorld={leaveWorld}
+        onRunFinale={(outcome) => runFinale(outcome)}
+        dialogue={dialogue}
+        knownStreets={knownStreets}
+        walkedStreets={walkedStreets}
+        minimapCoord={minimapCoord}
+        playerPos={playerPos}
+      />
 
       <AnimatePresence>
         {ambient && (

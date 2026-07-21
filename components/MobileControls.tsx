@@ -6,8 +6,8 @@ import type { Hotspot } from "@/lib/universe";
 import type { TouchInput } from "@/components/GameCanvas";
 import { Button } from "@/components/ui/button";
 
-const JOYSTICK_BASE = 96;
-const JOYSTICK_KNOB = 34;
+const JOYSTICK_BASE = 72;
+const JOYSTICK_KNOB = 28;
 const DEAD_ZONE = 0.15;
 
 /** True on phones/tablets with coarse primary pointer. */
@@ -83,7 +83,7 @@ export function MobileControls({
     <>
       {/* Action — bottom-left */}
       <div
-        className="pointer-events-auto fixed bottom-4 left-4 z-20 pb-[env(safe-area-inset-bottom)] pl-[env(safe-area-inset-left)]"
+        className="pointer-events-auto fixed bottom-3 left-3 z-20 pb-[env(safe-area-inset-bottom)] pl-[env(safe-area-inset-left)]"
         aria-hidden={!nearHotspot}
       >
         <Button
@@ -92,7 +92,7 @@ export function MobileControls({
           sound="tap"
           disabled={!nearHotspot}
           aria-label={nearHotspot ? actionLabel(nearHotspot) : "Action"}
-          className={`size-14 rounded-full text-sm font-bold ${
+          className={`size-11 rounded-full text-sm font-bold ${
             nearHotspot
               ? "bg-main text-main-foreground shadow-shadow"
               : "bg-black/40 text-white/50"
@@ -101,14 +101,14 @@ export function MobileControls({
             if (nearHotspot) onInteract(nearHotspot);
           }}
         >
-          <Hand size={18} strokeWidth={2.5} />
+          <Hand size={16} strokeWidth={2.5} />
         </Button>
       </div>
 
       {/* Joystick — bottom-right */}
       <div
         ref={baseRef}
-        className="pointer-events-auto fixed bottom-4 right-4 z-20 touch-none pb-[env(safe-area-inset-bottom)] pr-[env(safe-area-inset-right)]"
+        className="pointer-events-auto fixed bottom-3 right-3 z-20 touch-none pb-[env(safe-area-inset-bottom)] pr-[env(safe-area-inset-right)]"
         style={{ width: JOYSTICK_BASE, height: JOYSTICK_BASE }}
         onPointerDown={(e) => {
           if (e.button !== 0) return;
