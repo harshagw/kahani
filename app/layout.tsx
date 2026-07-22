@@ -16,10 +16,9 @@ const bricolage = Bricolage_Grotesque({
 
 /** Absolute origin for Open Graph / Twitter card URLs (VERCEL_URL on Vercel). */
 const metadataBase = new URL(
-  process.env.NEXT_PUBLIC_SITE_URL ??
-    (process.env.VERCEL_URL
-      ? `https://${process.env.VERCEL_URL}`
-      : "http://localhost:3000")
+  process.env.VERCEL_URL
+    ? `https://${process.env.VERCEL_URL}`
+    : "http://localhost:3000"
 );
 
 export const metadata: Metadata = {
