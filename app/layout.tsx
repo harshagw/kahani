@@ -14,10 +14,32 @@ const bricolage = Bricolage_Grotesque({
   weight: ["500", "600", "700", "800"],
 });
 
+/** Canonical origin for absolute Open Graph / Twitter card URLs. */
+const metadataBase = new URL(
+  process.env.NEXT_PUBLIC_SITE_URL ??
+    (process.env.VERCEL_URL
+      ? `https://${process.env.VERCEL_URL}`
+      : "http://localhost:3000")
+);
+
 export const metadata: Metadata = {
+  metadataBase,
   title: "Kahani - an AI story you play",
   description:
     "A fast, image-first choice game set in India. Every scene is generated in real time.",
+  openGraph: {
+    title: "Kahani - an AI story you play",
+    description:
+      "A fast, image-first choice game set in India. Every scene is generated in real time.",
+    type: "website",
+    siteName: "Kahani",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Kahani - an AI story you play",
+    description:
+      "A fast, image-first choice game set in India. Every scene is generated in real time.",
+  },
 };
 
 export default function RootLayout({
