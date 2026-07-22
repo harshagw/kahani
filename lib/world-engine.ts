@@ -17,6 +17,9 @@ import type {
   Rect,
   SceneData,
 } from "./universe";
+import { normalizeScreenEdges, type Direction } from "./screen-edges";
+
+export type { Direction } from "./screen-edges";
 
 /** Appended to every scene render so the world reads as one retro RPG overworld. */
 const PIXEL_STYLE =
@@ -403,8 +406,6 @@ export function bibleBrief(b: GameBible): string {
 /* both images into structured hotspots → repeat one screen over.      */
 /* ------------------------------------------------------------------ */
 
-export type Direction = "n" | "e" | "s" | "w";
-
 const DIR_META: Record<Direction, { label: string; opposite: Direction }> = {
   n: { label: "NORTH", opposite: "s" },
   e: { label: "EAST", opposite: "w" },
@@ -667,16 +668,15 @@ export async function generateScreen(
     })
   );
 
-  const edges: EdgeOpenness = {
-    n: Boolean(spec.edges?.n),
-    e: Boolean(spec.edges?.e),
-    s: Boolean(spec.edges?.s),
-    w: Boolean(spec.edges?.w),
-  };
-  // Never strand the player: the way back stays open (walking east in means
-  // the WEST edge leads back), and at least one edge must lead onward.
-  if (arriveFrom) edges[DIR_META[arriveFrom].opposite] = true;
-  if (!edges.n && !edges.e && !edges.s && !edges.w) edges.e = true;
+  const edges = normalizeScreenEdges(
+    {
+      n: Boolean(spec.edges?.n),
+      e: Boolean(spec.edges?.e),
+      s: Boolean(spec.edges?.s),
+      w: Boolean(spec.edges?.w),
+    },
+    arriveFrom
+  );
 
   return {
     id,

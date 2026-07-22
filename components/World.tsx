@@ -30,6 +30,7 @@ import type {
   Hotspot,
   SceneData,
 } from "@/lib/universe";
+import { repairLoadedStreetEdges, streetCoordKeys } from "@/lib/screen-edges";
 import { GEN_CALL_COST, MAX_GAME_TITLE_LENGTH, SESSION_TIME_LIMIT_SEC } from "@/lib/constants";
 import { MusicEngine, getMusicTheme, pickMusicTheme } from "@/lib/music";
 import { playSfx } from "@/lib/sfx";
@@ -481,13 +482,23 @@ export function World({ mode, gameId: routeGameId, initialIdea }: WorldProps) {
   }, []);
 
   const showScene = useCallback((s: SceneData) => {
-    scenesRef.current.set(s.id, s);
-    setScene(s);
-    setAmbient(s.ambient);
-    setTimeout(() => setAmbient((a) => (a === s.ambient ? null : a)), 5000);
-    warmSceneImages(s);
+    let next = s;
+    if (s.kind === "street" && s.coord && s.edges) {
+      const repaired = repairLoadedStreetEdges(
+        s,
+        streetCoordKeys([...scenesRef.current.values()])
+      );
+      if (repaired && repaired !== s.edges) {
+        next = { ...s, edges: repaired };
+      }
+    }
+    scenesRef.current.set(next.id, next);
+    setScene(next);
+    setAmbient(next.ambient);
+    setTimeout(() => setAmbient((a) => (a === next.ambient ? null : a)), 5000);
+    warmSceneImages(next);
 
-    const cell = streetCellFromScene(s);
+    const cell = streetCellFromScene(next);
     if (cell) {
       setKnownStreets((prev) => mergeKnownCell(prev, cell));
       const key = `${cell.x},${cell.y}`;
@@ -679,10 +690,14 @@ export function World({ mode, gameId: routeGameId, initialIdea }: WorldProps) {
     setBible(game.bible);
     setQuestHook(game.bible.story.goal);
 
+    const streetCoords = streetCoordKeys(game.scenes);
     const map = new Map<string, SceneData>();
     for (const s of game.scenes) {
-      map.set(s.id, s);
-      warmSceneImages(s);
+      const repaired = repairLoadedStreetEdges(s, streetCoords);
+      const scene: SceneData =
+        repaired !== s.edges ? { ...s, edges: repaired } : s;
+      map.set(scene.id, scene);
+      warmSceneImages(scene);
     }
     scenesRef.current = map;
     placedRoomsRef.current = rebuildPlacedRooms(game.scenes);
