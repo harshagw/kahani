@@ -14,7 +14,7 @@ const bricolage = Bricolage_Grotesque({
   weight: ["500", "600", "700", "800"],
 });
 
-/** Canonical origin for absolute Open Graph / Twitter card URLs. */
+/** Absolute origin for Open Graph / Twitter card URLs (VERCEL_URL on Vercel). */
 const metadataBase = new URL(
   process.env.NEXT_PUBLIC_SITE_URL ??
     (process.env.VERCEL_URL
